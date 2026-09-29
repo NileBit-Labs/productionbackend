@@ -13,7 +13,7 @@ use Illuminate\Validation\ValidationException;
 class ProductService
 {
     /** Fields whose change is worth an audit entry (they move money or meaning). */
-    private const AUDITED = ['name', 'sku', 'barcode', 'category_id', 'base_unit', 'selling_price', 'current_cost', 'low_stock_threshold', 'status'];
+    private const AUDITED = ['kind', 'name', 'family', 'size_label', 'output_equivalent', 'shelf_life_days', 'sku', 'barcode', 'category_id', 'base_unit', 'selling_price', 'current_cost', 'low_stock_threshold', 'status'];
 
     public function __construct(private StockService $stock, private AuditLogger $audit) {}
 
@@ -100,15 +100,17 @@ class ProductService
     private function attributes(array $data, bool $partial = false): array
     {
         $attributes = array_intersect_key($data, array_flip([
-            'name', 'category_id', 'sku', 'barcode', 'base_unit', 'selling_price', 'current_cost', 'low_stock_threshold',
+            'kind', 'name', 'family', 'size_label', 'output_equivalent', 'shelf_life_days',
+            'category_id', 'sku', 'barcode', 'base_unit', 'selling_price', 'current_cost', 'low_stock_threshold',
         ]));
 
         if (! $partial) {
-            $attributes += ['current_cost' => 0, 'low_stock_threshold' => 0];
+            $attributes += ['current_cost' => 0, 'low_stock_threshold' => 0, 'selling_price' => 0];
             $attributes['current_cost'] ??= 0;
             $attributes['low_stock_threshold'] ??= 0;
+            $attributes['selling_price'] ??= 0;
         } else {
-            foreach (['current_cost', 'low_stock_threshold'] as $field) {
+            foreach (['current_cost', 'low_stock_threshold', 'selling_price'] as $field) {
                 if (array_key_exists($field, $attributes) && $attributes[$field] === null) {
                     $attributes[$field] = 0;
                 }

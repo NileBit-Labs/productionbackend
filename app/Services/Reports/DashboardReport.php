@@ -19,6 +19,7 @@ class DashboardReport
         private SalesAnalytics $sales,
         private StockReport $stock,
         private DebtReport $debt,
+        private ProductionReport $production,
     ) {}
 
     /** @return array<string, mixed> */
@@ -73,6 +74,7 @@ class DashboardReport
             'payment_methods' => $this->sales->paymentMethods($shop, $today),
             'stock' => $this->stock->glance($shop),
             'debt' => $this->debt->glance($shop),
+            'production' => $this->production->glance($shop, withCost: $role === Role::Owner),
             'recent_sales' => $this->recentSales($shop, null),
         ];
     }

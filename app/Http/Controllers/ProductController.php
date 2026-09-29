@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Product;
 use App\Services\ProductService;
+use App\Support\KindFilter;
 use App\Support\ManagedProductPresenter;
 use App\Support\PerPage;
 use App\Support\ProductRules;
@@ -26,6 +27,10 @@ class ProductController extends Controller
 
         if ($status !== 'all') {
             $query->where('status', $status === 'archived' ? 'archived' : 'active');
+        }
+
+        if ($kinds = KindFilter::from($request)) {
+            $query->whereIn('kind', $kinds);
         }
 
         if ($request->filled('category_id')) {

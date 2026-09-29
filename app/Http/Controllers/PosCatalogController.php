@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\ProductKind;
 use App\Models\Product;
 use App\Support\PosProductPresenter;
 use Illuminate\Http\Request;
@@ -18,6 +19,7 @@ class PosCatalogController extends Controller
 
         $query = Product::where('shop_id', $shop->id)
             ->where('status', 'active')
+            ->where('kind', ProductKind::FinishedGood)
             ->with(['units', 'category:id,name'])
             ->withSum('stockMovements as stock', 'quantity_delta')
             ->orderBy('name');

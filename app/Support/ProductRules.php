@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Enums\ProductKind;
 use Illuminate\Validation\Rule;
 
 class ProductRules
@@ -15,12 +16,18 @@ class ProductRules
         $unique = fn (string $column) => Rule::unique('products', $column)->where('shop_id', $shopId)->ignore($ignoreId);
 
         return [
+            'kind' => ['sometimes', Rule::enum(ProductKind::class)],
             'name' => [$required, 'string', 'max:255'],
+            'family' => ['nullable', 'string', 'max:255'],
+            'size_label' => ['nullable', 'string', 'max:50'],
+            'output_equivalent' => ['nullable', 'numeric', 'gt:0', 'max:1000000'],
+            'shelf_life_days' => ['nullable', 'integer', 'min:1', 'max:36500'],
             'category_id' => ['nullable', 'integer', Rule::exists('categories', 'id')->where('shop_id', $shopId)],
             'sku' => ['nullable', 'string', 'max:100', $unique('sku')],
             'barcode' => ['nullable', 'string', 'max:100', $unique('barcode')],
             'base_unit' => [$required, 'string', 'max:50'],
-            'selling_price' => [$required, 'integer', 'min:0', 'max:1000000000000'],
+            // Inputs (raw materials, packaging) are never sold, so they need no selling price.
+            'selling_price' => [$partial ? 'sometimes' : 'required_unless:kind,raw_material,packaging', 'nullable', 'integer', 'min:0', 'max:1000000000000'],
             'current_cost' => ['nullable', 'integer', 'min:0', 'max:1000000000000'],
             'low_stock_threshold' => ['nullable', 'numeric', 'min:0', 'max:1000000'],
 

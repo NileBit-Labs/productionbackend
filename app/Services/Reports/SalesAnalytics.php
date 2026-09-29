@@ -2,6 +2,7 @@
 
 namespace App\Services\Reports;
 
+use App\Enums\ExpenseType;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\Shop;
@@ -211,20 +212,25 @@ class SalesAnalytics
         return $result;
     }
 
-    /** @return array<int, array{category: string, amount: int}> */
+    /**
+     * Operating expenses only. Direct labour and direct production expenses are part of a batch's
+     * cost and reach profit through the cost of goods sold, so counting them here too would count them twice.
+     *
+     * @return array<int, array{category: string, amount: int}>
+     */
     public function expensesByCategory(Shop $shop, ReportRange $range): array
     {
-        return DB::table('expenses')->where('shop_id', $shop->id)
+        return DB::table('expenses')->where('shop_id', $shop->id)->where('type', ExpenseType::Operating->value)
             ->whereBetween('expense_date', [$range->from->toDateString(), $range->to->toDateString()])
             ->selectRaw('category, SUM(amount) as amount')->groupBy('category')->orderByDesc('amount')->get()
             ->map(fn ($row) => ['category' => $row->category, 'amount' => (int) $row->amount])
             ->all();
     }
 
-    /** @return array<string, int> local date => expenses that day */
+    /** @return array<string, int> local date => operating expenses that day */
     public function expensesByDay(Shop $shop, ReportRange $range): array
     {
-        return DB::table('expenses')->where('shop_id', $shop->id)
+        return DB::table('expenses')->where('shop_id', $shop->id)->where('type', ExpenseType::Operating->value)
             ->whereBetween('expense_date', [$range->from->toDateString(), $range->to->toDateString()])
             ->selectRaw('expense_date as day, SUM(amount) as amount')->groupBy('expense_date')->get()
             ->mapWithKeys(fn ($row) => [substr((string) $row->day, 0, 10) => (int) $row->amount])

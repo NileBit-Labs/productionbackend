@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\Role;
 use App\Services\Reports\DashboardReport;
 use App\Services\Reports\DebtReport;
+use App\Services\Reports\ProductionReport;
 use App\Services\Reports\ReportExport;
 use App\Services\Reports\SalesAnalytics;
 use App\Services\Reports\StockReport;
@@ -46,7 +47,14 @@ class ReportController extends Controller
         ]);
     }
 
-    public function profit(Request $request, SalesAnalytics $analytics): JsonResponse
+    public function production(Request $request, ProductionReport $production): JsonResponse
+    {
+        $shop = $request->attributes->get('shop');
+
+        return response()->json($production->report($shop, ReportRange::fromRequest($request, $shop, default: 'month')));
+    }
+
+    public function profit(Request $request, SalesAnalytics $analytics, ProductionReport $production): JsonResponse
     {
         $shop = $request->attributes->get('shop');
         $range = ReportRange::fromRequest($request, $shop, default: 'month');
@@ -59,6 +67,8 @@ class ReportController extends Controller
         $cost = array_sum(array_column($daily, 'cost_of_goods'));
         $expenseTotal = array_sum(array_column($expenses, 'amount'));
         $gross = $summary['net_sales'] - $cost;
+        // Stock spoiled outside any batch is a loss that no sale's cost of goods carries.
+        $wastage = $production->standaloneWastageCost($shop, $range);
 
         $products = collect($analytics->products($shop, $range))
             ->map(fn ($p) => $p + ['profit' => $p['revenue'] - $p['cost'], 'margin' => SalesAnalytics::margin($p['revenue'] - $p['cost'], $p['revenue'])])
@@ -73,6 +83,10 @@ class ReportController extends Controller
                 'margin' => SalesAnalytics::margin($gross, $summary['net_sales']),
                 'expenses' => $expenseTotal,
                 'operating_profit' => $gross - $expenseTotal,
+                'operating_expenses' => $expenseTotal,
+                'wastage_losses' => $wastage,
+                'net_profit' => $gross - $expenseTotal - $wastage,
+                'net_margin' => SalesAnalytics::margin($gross - $expenseTotal - $wastage, $summary['net_sales']),
             ],
             'daily' => array_map(function (array $d) use ($expensesByDay) {
                 $expense = $expensesByDay[$d['date']] ?? 0;

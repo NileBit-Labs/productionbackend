@@ -2,15 +2,18 @@
 
 namespace App\Models;
 
+use App\Enums\ProductKind;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Product extends Model
 {
+    protected $attributes = ['kind' => 'finished_good'];
+
     protected $fillable = [
-        'shop_id', 'category_id', 'name', 'sku', 'barcode', 'base_unit',
-        'selling_price', 'current_cost', 'low_stock_threshold', 'status',
+        'shop_id', 'category_id', 'kind', 'name', 'family', 'size_label', 'output_equivalent', 'shelf_life_days',
+        'sku', 'barcode', 'base_unit', 'selling_price', 'current_cost', 'low_stock_threshold', 'status',
     ];
 
     protected function casts(): array
@@ -19,7 +22,16 @@ class Product extends Model
             'selling_price' => 'integer',
             'current_cost' => 'integer',
             'low_stock_threshold' => 'float',
+            'kind' => ProductKind::class,
+            'output_equivalent' => 'float',
+            'shelf_life_days' => 'integer',
         ];
+    }
+
+    /** Rows loaded before the kind column existed, or built in memory, count as finished goods. */
+    public function kindOrDefault(): ProductKind
+    {
+        return $this->kind ?? ProductKind::FinishedGood;
     }
 
     public function category(): BelongsTo
