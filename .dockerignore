@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.production.example
+.git
+.github
+.idea
+.vscode
+.codex
+.cursor
+.phpunit.cache
+node_modules
+vendor
+public/build
+storage/logs
