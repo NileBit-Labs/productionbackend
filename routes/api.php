@@ -5,12 +5,16 @@ use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CustomerController;
+use App\Http\Controllers\ExpenseCategoryController;
 use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\InventoryController;
+use App\Http\Controllers\MeasurementUnitController;
 use App\Http\Controllers\PosCatalogController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductImportController;
+use App\Http\Controllers\ProductionBatchController;
 use App\Http\Controllers\PurchaseController;
+use App\Http\Controllers\RecipeController;
 use App\Http\Controllers\RefundController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SaleController;
@@ -19,6 +23,7 @@ use App\Http\Controllers\ShopController;
 use App\Http\Controllers\StaffController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\SyncController;
+use App\Http\Controllers\WastageController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -108,6 +113,35 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/expenses', [ExpenseController::class, 'index']);
         Route::post('/expenses', [ExpenseController::class, 'store']);
         Route::patch('/expenses/{expense}', [ExpenseController::class, 'update']);
+
+        Route::get('/expense-categories', [ExpenseCategoryController::class, 'index']);
+        Route::post('/expense-categories', [ExpenseCategoryController::class, 'store']);
+        Route::patch('/expense-categories/{category}', [ExpenseCategoryController::class, 'update']);
+
+        // Production: units, recipes (bills of materials), batches and wastage.
+        Route::get('/measurement-units', [MeasurementUnitController::class, 'index']);
+        Route::post('/measurement-units', [MeasurementUnitController::class, 'store']);
+        Route::patch('/measurement-units/{unit}', [MeasurementUnitController::class, 'update']);
+        Route::delete('/measurement-units/{unit}', [MeasurementUnitController::class, 'destroy']);
+
+        Route::get('/recipes', [RecipeController::class, 'index']);
+        Route::post('/recipes', [RecipeController::class, 'store']);
+        Route::get('/recipes/{recipe}', [RecipeController::class, 'show']);
+        Route::patch('/recipes/{recipe}', [RecipeController::class, 'update']);
+        Route::post('/recipes/{recipe}/archive', [RecipeController::class, 'archive']);
+        Route::post('/recipes/{recipe}/restore', [RecipeController::class, 'restore']);
+
+        Route::get('/production/batches', [ProductionBatchController::class, 'index']);
+        Route::post('/production/batches', [ProductionBatchController::class, 'store']);
+        Route::get('/production/batches/{batch}', [ProductionBatchController::class, 'show']);
+        Route::patch('/production/batches/{batch}', [ProductionBatchController::class, 'update']);
+        Route::post('/production/batches/{batch}/complete', [ProductionBatchController::class, 'complete']);
+        Route::post('/production/batches/{batch}/cancel', [ProductionBatchController::class, 'cancel']);
+
+        Route::get('/wastage', [WastageController::class, 'index']);
+        Route::post('/wastage', [WastageController::class, 'store']);
+
+        Route::get('/reports/production', [ReportController::class, 'production']);
 
         Route::get('/ask/status', [AskController::class, 'status']);
         Route::post('/ask', [AskController::class, 'ask'])->middleware('throttle:ask');

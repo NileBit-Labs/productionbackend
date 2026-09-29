@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\ExpenseType;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -12,14 +13,22 @@ class Expense extends Model
         'Repairs', 'Licences & taxes', 'Supplies', 'Other',
     ];
 
-    protected $fillable = ['shop_id', 'category', 'amount', 'description', 'recorded_by', 'expense_date'];
+    protected $attributes = ['type' => 'operating'];
+
+    protected $fillable = ['shop_id', 'category', 'type', 'production_batch_id', 'amount', 'description', 'recorded_by', 'expense_date'];
 
     protected function casts(): array
     {
         return [
             'amount' => 'integer',
             'expense_date' => 'date:Y-m-d',
+            'type' => ExpenseType::class,
         ];
+    }
+
+    public function batch(): BelongsTo
+    {
+        return $this->belongsTo(ProductionBatch::class, 'production_batch_id');
     }
 
     public function recorder(): BelongsTo

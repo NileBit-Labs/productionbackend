@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\MovementType;
 use App\Enums\PaymentMethod;
+use App\Enums\ProductKind;
 use App\Models\Customer;
 use App\Models\Payment;
 use App\Models\Product;
@@ -154,6 +155,7 @@ class SaleService
         $products = Product::with('units')
             ->where('shop_id', $shop->id)
             ->where('status', 'active')
+            ->where('kind', ProductKind::FinishedGood)
             ->whereIn('id', collect($lines)->pluck('product_id')->unique())
             ->orderBy('id')
             ->lockForUpdate()

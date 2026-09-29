@@ -4,11 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Enums\MovementType;
 use App\Models\Product;
+use App\Models\ProductionBatch;
 use App\Models\Purchase;
 use App\Models\Refund;
 use App\Models\Sale;
 use App\Models\StockMovement;
 use App\Services\InventoryService;
+use App\Support\KindFilter;
 use App\Support\ManagedProductPresenter;
 use App\Support\PerPage;
 use Illuminate\Http\JsonResponse;
@@ -24,6 +26,10 @@ class InventoryController extends Controller
         $stockSql = '(select coalesce(sum(quantity_delta), 0) from stock_movements where stock_movements.product_id = products.id)';
 
         $base = Product::where('shop_id', $shop->id)->where('status', 'active');
+
+        if ($kinds = KindFilter::from($request)) {
+            $base->whereIn('kind', $kinds);
+        }
 
         $all = (clone $base)->withSum('stockMovements as stock', 'quantity_delta')->get();
         $presented = $all->map(fn (Product $p) => ManagedProductPresenter::format($p));
@@ -211,6 +217,10 @@ class InventoryController extends Controller
 
         foreach (Purchase::whereIn('id', $ids(Purchase::class))->get(['id', 'purchase_number']) as $purchase) {
             $labels[Purchase::class][$purchase->id] = $purchase->purchase_number;
+        }
+
+        foreach (ProductionBatch::whereIn('id', $ids(ProductionBatch::class))->get(['id', 'batch_number']) as $batch) {
+            $labels[ProductionBatch::class][$batch->id] = $batch->batch_number;
         }
 
         foreach ($ids(Refund::class) as $id) {

@@ -12,4 +12,8 @@ enum MovementType: string
     case Damage = 'DAMAGE';
     case Loss = 'LOSS';
     case Adjustment = 'ADJUSTMENT';
+    case ProductionInput = 'PRODUCTION_INPUT';
+    case ProductionOutput = 'PRODUCTION_OUTPUT';
+    case ProductionReversal = 'PRODUCTION_REVERSAL';
+    case Wastage = 'WASTAGE';
 }

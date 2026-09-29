@@ -15,7 +15,12 @@ class ManagedProductPresenter
 
         return [
             'id' => $product->id,
+            'kind' => $product->kindOrDefault()->value,
             'name' => $product->name,
+            'family' => $product->family,
+            'size_label' => $product->size_label,
+            'output_equivalent' => $product->output_equivalent,
+            'shelf_life_days' => $product->shelf_life_days,
             'sku' => $product->sku,
             'barcode' => $product->barcode,
             'category_id' => $product->category_id,
