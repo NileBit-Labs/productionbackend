@@ -40,6 +40,7 @@ class ProductionService
 {
     public function __construct(
         private StockService $stock,
+        private ProductionLotService $lots,
         private AuditLogger $audit,
     ) {}
 
@@ -113,6 +114,9 @@ class ProductionService
     {
         return DB::transaction(function () use ($shop, $by, $batchId, $data) {
             $batch = $this->lockBatch($shop, $batchId);
+            if (! empty($data['idempotency_key']) && $batch->status === BatchStatus::Completed && $batch->completion_idempotency_key === $data['idempotency_key']) {
+                return $batch;
+            }
             $this->assertDraft($batch);
 
             $batch->fill(array_intersect_key($data, array_flip(['production_date', 'expiry_date', 'notes'])));
@@ -239,6 +243,7 @@ class ProductionService
 
                 $product->update(['current_cost' => $costAfter]);
                 $output->fill(['cost_before' => $costBefore, 'cost_after' => $costAfter])->save();
+                $this->lots->create($shop, $batch, $output);
             }
 
             $batch->fill([
@@ -252,6 +257,7 @@ class ProductionService
                 'output_quantity' => $outputQuantity,
                 'completed_at' => now(),
                 'completed_by' => $by->id,
+                'completion_idempotency_key' => $data['idempotency_key'] ?? null,
             ])->save();
 
             $this->audit->record($by, $shop, 'production.complete', $batch, ['status' => BatchStatus::Draft->value], [
@@ -570,17 +576,20 @@ class ProductionService
         $ids = $outputs->pluck('product_id')->merge($inputs->pluck('product_id'))->merge($wastage->pluck('product_id'))->unique()->sort()->values();
         $products = Product::where('shop_id', $shop->id)->whereIn('id', $ids)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
 
-        // Goods that have already been sold can't be un-made.
+        // Product-level stock cannot prove that this batch's own output still exists:
+        // later production or a purchase may have replenished the same SKU. Lots can.
         foreach ($outputs as $output) {
-            if ($this->stock->current($shop->id, $output->product_id) + 0.0005 < $output->quantity) {
-                throw ValidationException::withMessages(['batch' => "Some of the {$products[$output->product_id]->name} from {$batch->batch_number} has already been sold or written off, so the batch can't be cancelled."]);
-            }
+            $lot = \App\Models\ProductionLot::where('production_batch_output_id', $output->id)->lockForUpdate()->first();
+            if (! $lot) throw ValidationException::withMessages(['batch' => 'This legacy batch has no lot ledger and cannot be safely cancelled.']);
+            $this->lots->assertWholeLotAvailable($lot);
         }
 
         $note = "{$batch->batch_number} cancelled: {$reason}";
 
         foreach ($outputs as $output) {
             $this->stock->record($products[$output->product_id], -$output->quantity, MovementType::ProductionReversal, $by, $batch, $note, $output->unit_cost);
+            $lot = \App\Models\ProductionLot::where('production_batch_output_id', $output->id)->lockForUpdate()->firstOrFail();
+            $this->lots->consumeLot($lot, $output->quantity, $by, 'PRODUCTION_REVERSAL', $batch, $note);
         }
 
         foreach ($outputs->sortByDesc('id') as $output) {

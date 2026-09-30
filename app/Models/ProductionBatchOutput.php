@@ -34,4 +34,9 @@ class ProductionBatchOutput extends Model
     {
         return $this->belongsTo(ProductionBatch::class, 'production_batch_id');
     }
+
+    public function lot(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(ProductionLot::class, 'production_batch_output_id');
+    }
 }

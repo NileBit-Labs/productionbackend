@@ -7,6 +7,7 @@ use App\Enums\ExpenseType;
 use App\Models\ProductionBatch;
 use App\Models\ProductionBatchOutput;
 use App\Services\ProductionService;
+use App\Services\ProductionLotService;
 use App\Support\PerPage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -104,6 +105,7 @@ class ProductionBatchController extends Controller
             'production_date' => ['sometimes', 'date', 'before_or_equal:'.$shop->today()],
             'expiry_date' => ['nullable', 'date'],
             'notes' => ['nullable', 'string', 'max:2000'],
+            'idempotency_key' => ['nullable', 'string', 'max:100'],
             'wastage' => ['nullable', 'array', 'max:100'],
             'wastage.*.product_id' => ['required', 'integer'],
             'wastage.*.quantity' => ['required', 'numeric', 'gt:0', 'max:1000000'],
@@ -186,7 +188,7 @@ class ProductionBatchController extends Controller
             ->with([
                 'recipe:id,name,yield_quantity,yield_unit', 'responsible:id,name', 'creator:id,name', 'completer:id,name',
                 'inputs.product:id,name,kind,base_unit,current_cost',
-                'outputs.product:id,name,size_label,base_unit,output_equivalent,selling_price',
+                'outputs.product:id,name,size_label,base_unit,output_equivalent,selling_price', 'outputs.lot.movements',
                 'wastage.product:id,name,base_unit,kind', 'wastage.recorder:id,name',
                 'expenses.recorder:id,name',
             ])
@@ -239,6 +241,8 @@ class ProductionBatchController extends Controller
                 'selling_price' => $o->product->selling_price,
                 'unit_margin' => $draft ? null : $o->product->selling_price - $o->unit_cost,
                 'expiry_date' => $o->expiry_date?->toDateString(),
+                'lot_id' => $o->lot?->id,
+                'remaining_quantity' => $o->lot ? round($o->lot->produced_quantity + $o->lot->movements->sum('quantity_delta'), 3) : null,
             ])->values(),
             'wastage' => $batch->wastage->map(fn ($w) => WastageController::format($w))->values(),
             'expenses' => $batch->expenses->map(fn ($e) => [

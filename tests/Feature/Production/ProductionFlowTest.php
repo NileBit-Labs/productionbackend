@@ -5,6 +5,7 @@ namespace Tests\Feature\Production;
 use App\Enums\Role;
 use App\Models\AuditLog;
 use App\Models\Product;
+use App\Models\ProductionLot;
 use App\Models\Shop;
 use App\Models\StockMovement;
 use App\Models\Supplier;
@@ -173,6 +174,8 @@ class ProductionFlowTest extends TestCase
         $this->assertSame(40.0, $this->stock('juice500'));
         $this->assertSame(30.0, $this->stock('juice1l'));
         $this->assertSame(3160, Product::find($this->ids['juice1l'])->current_cost);
+        $this->assertSame(2, ProductionLot::where('production_batch_id', $batchId)->count());
+        $this->assertSame(30.0, app(\App\Services\ProductionLotService::class)->remaining(ProductionLot::where('production_batch_id', $batchId)->where('product_id', $this->ids['juice1l'])->firstOrFail()));
 
         $this->assertSame(4, StockMovement::where('reference_id', $batchId)->where('movement_type', 'PRODUCTION_INPUT')->count());
         $this->assertSame(2, StockMovement::where('reference_id', $batchId)->where('movement_type', 'PRODUCTION_OUTPUT')->count());
@@ -188,6 +191,7 @@ class ProductionFlowTest extends TestCase
             'items' => [['product_id' => $this->ids['juice1l'], 'quantity' => 10]],
             'payments' => [['method' => 'CASH', 'amount' => 55000]],
         ])->assertCreated();
+        $this->assertSame(20.0, app(\App\Services\ProductionLotService::class)->remaining(ProductionLot::where('production_batch_id', $batchId)->where('product_id', $this->ids['juice1l'])->firstOrFail()));
 
         // An operating expense and some fruit that went bad in the store.
         $this->api()->postJson('/api/expenses', ['category' => 'Electricity', 'amount' => 5000, 'expense_date' => $this->shop->today()])->assertCreated();
@@ -448,5 +452,73 @@ class ProductionFlowTest extends TestCase
         $first = $this->api()->postJson('/api/production/batches', $payload)->assertCreated()->json('id');
         $this->api()->postJson('/api/production/batches', $payload)->assertOk()->assertJsonPath('id', $first);
         $this->assertDatabaseCount('production_batches', 1);
+    }
+
+    public function test_sale_spans_lots_fefo_and_refund_restores_the_original_lots(): void
+    {
+        $this->setUpCatalogue();
+        $first = $this->planBatch();
+        $this->api()->postJson("/api/production/batches/{$first}/complete", [
+            'inputs' => [['product_id' => $this->ids['mango'], 'actual_quantity' => 10]],
+            'outputs' => [['product_id' => $this->ids['juice1l'], 'quantity' => 5]],
+        ])->assertOk();
+        $second = $this->api()->postJson('/api/production/batches', ['recipe_id' => $this->ids['recipe']])->json('id');
+        $this->api()->postJson("/api/production/batches/{$second}/complete", [
+            'inputs' => [['product_id' => $this->ids['mango'], 'actual_quantity' => 10]],
+            'outputs' => [['product_id' => $this->ids['juice1l'], 'quantity' => 5]],
+        ])->assertOk();
+
+        $sale = $this->api()->postJson('/api/sales', [
+            'items' => [['product_id' => $this->ids['juice1l'], 'quantity' => 7]],
+            'payments' => [['method' => 'CASH', 'amount' => 38500]],
+        ])->assertCreated()->json();
+        $lots = ProductionLot::whereIn('production_batch_id', [$first, $second])->orderBy('production_batch_id')->get();
+        $service = app(\App\Services\ProductionLotService::class);
+        $this->assertSame(0.0, $service->remaining($lots[0]));
+        $this->assertSame(3.0, $service->remaining($lots[1]));
+
+        $this->api()->postJson("/api/sales/{$sale['id']}/refund", [
+            'lines' => [['sale_item_id' => $sale['items'][0]['id'], 'quantity' => 7, 'restock' => true]],
+            'method' => 'CASH', 'reason' => 'Returned unopened bottles',
+        ])->assertCreated();
+        $this->assertSame(5.0, $service->remaining($lots[0]->fresh()));
+        $this->assertSame(5.0, $service->remaining($lots[1]->fresh()));
+    }
+
+    public function test_completion_key_replays_without_double_consuming_or_creating_lots(): void
+    {
+        $this->setUpCatalogue();
+        $batch = $this->planBatch();
+        $payload = [
+            'idempotency_key' => 'completion-1',
+            'inputs' => [['product_id' => $this->ids['mango'], 'actual_quantity' => 10]],
+            'outputs' => [['product_id' => $this->ids['juice1l'], 'quantity' => 10]],
+        ];
+        $this->api()->postJson("/api/production/batches/{$batch}/complete", $payload)->assertOk();
+        $this->api()->postJson("/api/production/batches/{$batch}/complete", $payload)->assertOk();
+        $this->assertSame(90.0, $this->stock('mango'));
+        $this->assertSame(10.0, $this->stock('juice1l'));
+        $this->assertSame(1, ProductionLot::where('production_batch_id', $batch)->count());
+    }
+
+    public function test_cancelling_batch_a_cannot_use_batch_b_stock_after_a_sale(): void
+    {
+        $this->setUpCatalogue();
+        $a = $this->planBatch();
+        $this->api()->postJson("/api/production/batches/{$a}/complete", [
+            'inputs' => [['product_id' => $this->ids['mango'], 'actual_quantity' => 10]],
+            'outputs' => [['product_id' => $this->ids['juice1l'], 'quantity' => 10]],
+        ])->assertOk();
+        $this->api()->postJson('/api/sales', [
+            'items' => [['product_id' => $this->ids['juice1l'], 'quantity' => 8]], 'payments' => [['method' => 'CASH', 'amount' => 44000]],
+        ])->assertCreated();
+        $b = $this->api()->postJson('/api/production/batches', ['recipe_id' => $this->ids['recipe']])->json('id');
+        $this->api()->postJson("/api/production/batches/{$b}/complete", [
+            'inputs' => [['product_id' => $this->ids['mango'], 'actual_quantity' => 10]],
+            'outputs' => [['product_id' => $this->ids['juice1l'], 'quantity' => 10]],
+        ])->assertOk();
+        $this->api()->postJson("/api/production/batches/{$a}/cancel", ['reason' => 'Incorrect run'])
+            ->assertUnprocessable()->assertJsonValidationErrors('batch');
+        $this->assertSame(12.0, $this->stock('juice1l'));
     }
 }

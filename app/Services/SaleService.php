@@ -27,6 +27,7 @@ class SaleService
 {
     public function __construct(
         private StockService $stock,
+        private ProductionLotService $lots,
         private AuditLogger $audit,
         private CustomerLedger $ledger,
     ) {}
@@ -81,6 +82,9 @@ class SaleService
                     $product, $baseQuantity, MovementType::SaleReturn, $user, $locked,
                     "Void of {$locked->sale_number}: {$reason}", $item->historical_cost,
                 );
+                if ($product->kindOrDefault() === ProductKind::FinishedGood) {
+                    $this->lots->restoreFromReference($shop, 'SALE', $item, $baseQuantity, $user, $locked, 'SALE_VOID', $reason);
+                }
             }
 
             foreach ($locked->payments->where('direction', 'in') as $payment) {
@@ -287,7 +291,7 @@ class SaleService
         foreach ($priced as $line) {
             $product = $line['product'];
 
-            SaleItem::create([
+            $saleItem = SaleItem::create([
                 'sale_id' => $sale->id,
                 'product_id' => $product->id,
                 'product_name' => $product->name,
@@ -309,6 +313,18 @@ class SaleService
                 null,
                 $line['historical_cost'],
             );
+
+            // Finished goods made by production must leave a concrete batch/expiry lot.
+            // Consume all available lot stock first (FEFO/FIFO). A product may have
+            // pre-production legacy stock too; the remainder stays non-lotted rather
+            // than making a valid mixed sale fail or pretending it came from a lot.
+            if ($product->kindOrDefault() === ProductKind::FinishedGood) {
+                $needed = round($line['quantity'] * $line['conversion'], 3);
+                $lotStock = $this->lots->availableQuantity($shop, $product->id, true);
+                if ($lotStock > 0) {
+                    $this->lots->consume($shop, $product, min($needed, $lotStock), $cashier, 'SALE', $saleItem);
+                }
+            }
         }
 
         foreach ($payments as $payment) {

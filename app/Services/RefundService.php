@@ -27,6 +27,7 @@ class RefundService
 {
     public function __construct(
         private StockService $stock,
+        private ProductionLotService $lots,
         private CustomerLedger $ledger,
         private AuditLogger $audit,
     ) {}
@@ -190,6 +191,7 @@ class RefundService
                             "Refund R-{$refund->id}: {$data['reason']}",
                             $item->historical_cost,
                         );
+                        $this->lots->restoreFromReference($shop, 'SALE', $item, round($line['quantity'] * $item->unit_conversion, 3), $by, $refund, 'SALE_RETURN', $data['reason']);
                     }
                 }
 

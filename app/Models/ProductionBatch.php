@@ -15,7 +15,7 @@ class ProductionBatch extends Model
         'shop_id', 'batch_number', 'recipe_id', 'name', 'status', 'production_date', 'expiry_date',
         'planned_yield', 'yield_unit', 'responsible_user_id', 'notes',
         'material_cost', 'packaging_cost', 'labour_cost', 'direct_expense_cost', 'wastage_cost', 'total_cost', 'output_quantity',
-        'created_by', 'completed_at', 'completed_by', 'cancelled_at', 'cancelled_by', 'cancel_reason', 'idempotency_key',
+        'created_by', 'completed_at', 'completed_by', 'cancelled_at', 'cancelled_by', 'cancel_reason', 'idempotency_key', 'completion_idempotency_key',
     ];
 
     protected function casts(): array

@@ -6,7 +6,7 @@ use App\Enums\BatchStatus;
 use App\Enums\ProductKind;
 use App\Models\Product;
 use App\Models\ProductionBatch;
-use App\Models\ProductionBatchOutput;
+use App\Models\ProductionLot;
 use App\Models\Shop;
 use App\Models\WastageRecord;
 use App\Services\StockService;
@@ -110,8 +110,7 @@ class ProductionReport
     /**
      * Finished stock close to (or past) its expiry, batch by batch.
      *
-     * Sales are not tied to batches, so what is left of each batch is estimated first-in,
-     * first-out: the stock on hand is assumed to be from the newest batches.
+     * Lot movements, rather than aggregate product stock, are authoritative.
      *
      * @return array<int, array<string, mixed>>
      */
@@ -120,52 +119,32 @@ class ProductionReport
         $today = CarbonImmutable::parse($shop->today());
         $horizon = $today->addDays($days)->toDateString();
 
-        $outputs = ProductionBatchOutput::query()
-            ->join('production_batches', 'production_batches.id', '=', 'production_batch_outputs.production_batch_id')
-            ->where('production_batches.shop_id', $shop->id)
-            ->where('production_batches.status', BatchStatus::Completed)
-            ->whereNotNull('production_batch_outputs.expiry_date')
-            ->select('production_batch_outputs.*', 'production_batches.batch_number', 'production_batches.production_date')
-            ->with('product:id,name,base_unit,size_label')
-            ->orderByDesc('production_batches.production_date')->orderByDesc('production_batch_outputs.id')
-            ->get()
-            ->groupBy('product_id');
-
-        if ($outputs->isEmpty()) {
-            return [];
-        }
-
-        $levels = $this->stock->currentFor($shop->id, $outputs->keys()->all());
         $rows = [];
 
-        foreach ($outputs as $productId => $batches) {
-            $left = max(0.0, $levels[$productId] ?? 0.0);
+        $lots = ProductionLot::where('shop_id', $shop->id)->whereNotNull('expiry_date')
+            ->where('expiry_date', '<=', $horizon)
+            ->with(['movements', 'product:id,name,base_unit,size_label', 'batch:id,batch_number', 'output:id,unit_cost'])
+            ->orderBy('expiry_date')->orderBy('production_date')->orderBy('id')->get();
 
-            foreach ($batches as $output) {
-                if ($left <= 0) {
-                    break;
-                }
-
-                $remaining = min($left, $output->quantity);
-                $left = round($left - $remaining, 3);
-                $expiry = $output->expiry_date->toDateString();
-
-                if ($expiry <= $horizon) {
-                    $rows[] = [
-                        'product_id' => (int) $productId,
-                        'product_name' => $output->product->name,
-                        'size_label' => $output->product->size_label,
-                        'unit' => $output->product->base_unit,
-                        'batch_id' => $output->production_batch_id,
-                        'batch_number' => $output->batch_number,
-                        'expiry_date' => $expiry,
-                        'days_left' => (int) $today->diffInDays(CarbonImmutable::parse($expiry), false),
-                        'expired' => $expiry < $today->toDateString(),
-                        'estimated_remaining' => round($remaining, 3),
-                        'value_at_cost' => (int) round($remaining * $output->unit_cost),
-                    ];
-                }
-            }
+        foreach ($lots as $lot) {
+            $remaining = round($lot->produced_quantity + $lot->movements->sum('quantity_delta'), 3);
+            if ($remaining <= 0) continue;
+            $expiry = $lot->expiry_date->toDateString();
+            $rows[] = [
+                'product_id' => $lot->product_id,
+                'product_name' => $lot->product->name,
+                'size_label' => $lot->product->size_label,
+                'unit' => $lot->product->base_unit,
+                'batch_id' => $lot->production_batch_id,
+                'batch_number' => $lot->batch->batch_number,
+                'expiry_date' => $expiry,
+                'days_left' => (int) $today->diffInDays(CarbonImmutable::parse($expiry), false),
+                'expired' => $expiry < $today->toDateString(),
+                'remaining_quantity' => $remaining,
+                // Kept for API compatibility; it is no longer an estimate.
+                'estimated_remaining' => $remaining,
+                'value_at_cost' => (int) round($remaining * $lot->output->unit_cost),
+            ];
         }
 
         usort($rows, fn ($a, $b) => [$a['expiry_date'], $a['product_name']] <=> [$b['expiry_date'], $b['product_name']]);

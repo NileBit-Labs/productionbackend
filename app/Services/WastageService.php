@@ -20,7 +20,7 @@ use Illuminate\Validation\ValidationException;
  */
 class WastageService
 {
-    public function __construct(private StockService $stock, private AuditLogger $audit) {}
+    public function __construct(private StockService $stock, private ProductionLotService $lots, private AuditLogger $audit) {}
 
     /**
      * @param  array<string, mixed>  $data  validated request data
@@ -70,6 +70,15 @@ class WastageService
                     'recorded_by' => $by->id,
                     'idempotency_key' => $key,
                 ]);
+
+                if ($product->kindOrDefault() === ProductKind::FinishedGood) {
+                    // Retain support for inherited non-production finished stock;
+                    // only the portion actually backed by lots has lot provenance.
+                    $lotStock = $this->lots->availableQuantity($shop, $product->id, true);
+                    if ($lotStock > 0) {
+                        $this->lots->consume($shop, $product, min($quantity, $lotStock), $by, 'WASTAGE', $record, $data['reason']);
+                    }
+                }
 
                 $this->audit->record($by, $shop, 'wastage.record', $record, ['stock' => $onHand], [
                     'stock' => round($onHand - $quantity, 3),
