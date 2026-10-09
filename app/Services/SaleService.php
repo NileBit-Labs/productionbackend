@@ -174,6 +174,12 @@ class SaleService
             ->get()
             ->keyBy('id');
 
+        // A concurrent retry may have waited behind the winning checkout's stock locks.
+        // Replay it before validating stock that the original request already consumed.
+        if (! empty($data['idempotency_key']) && ($existing = $this->findByKey($shop, $data['idempotency_key']))) {
+            return $existing;
+        }
+
         $priced = [];
         $baseNeeded = [];
         $gross = 0;

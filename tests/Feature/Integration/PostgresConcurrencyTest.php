@@ -53,12 +53,14 @@ class PostgresConcurrencyTest extends TestCase
     {
         [$owner, $shop] = $this->shopWithMember();
         Organization::whereKey($shop->organization_id)->update(['name' => 'QA Nutrawell isolated checkout race']);
-        $product = $this->productWithStock($shop, $owner, 1000, 500, 2);
+        $product = $this->productWithStock($shop, $owner, 1000, 500, 1);
         $payload = ['idempotency_key' => 'race-sale', 'items' => [['product_id' => $product->id, 'quantity' => 1]], 'payments' => [['method' => 'CASH', 'amount' => 1000]]];
         $results = $this->race(['operation' => 'sale', 'shop' => $shop->id, 'user' => $owner->id, 'payload' => $payload]);
         $this->assertSame($results[0]['id'], $results[1]['id']);
         $this->assertSame(1, Sale::where('shop_id', $shop->id)->count());
-        $this->assertSame(1.0, app(StockService::class)->current($shop->id, $product->id));
+        $this->assertSame(0.0, app(StockService::class)->current($shop->id, $product->id));
+        $product = $this->productWithStock($shop, $owner, 1000, 500, 1);
+        $payload['items'][0]['product_id'] = $product->id;
         $payload['idempotency_key'] = null;
         $results = $this->race(['operation' => 'sale', 'shop' => $shop->id, 'user' => $owner->id, 'payload' => $payload]);
         $this->assertSame(1, count(array_filter($results, fn ($result) => isset($result['validation']))));
