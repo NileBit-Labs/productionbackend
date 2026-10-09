@@ -77,6 +77,12 @@ class UatRemediationTest extends TestCase
         $this->assertSame(1, ProductionLot::count());
         $this->assertSame(7.5, app(StockService::class)->current($shop->id, $input->id));
         $this->patchJson("/api/production/batches/$id", ['name' => 'Illegal edit'])->assertUnprocessable();
+        $input->update(['current_cost' => 2000]);
+        $this->getJson("/api/production/batches/$id")->assertOk()->assertJsonPath('total_cost', 3000);
+        $body['idempotency_key'] = 'new-price-draft';
+        $next = $this->postJson('/api/production/batches', $body)->assertCreated()->json('id');
+        $this->postJson("/api/production/batches/$next/complete", ['idempotency_key' => 'new-price-complete'])->assertOk()->assertJsonPath('total_cost', 5500);
+        $this->assertSame(2125, $output->fresh()->current_cost);
     }
 
     public function test_expired_lots_cannot_be_sold_even_when_aggregate_stock_is_positive(): void
