@@ -3,11 +3,14 @@
 namespace App\Services\Reports;
 
 use App\Enums\BatchStatus;
+use App\Enums\MovementType;
 use App\Enums\ProductKind;
+use App\Enums\WastageStage;
 use App\Models\Product;
 use App\Models\ProductionBatch;
 use App\Models\ProductionLot;
 use App\Models\Shop;
+use App\Models\StockMovement;
 use App\Models\WastageRecord;
 use App\Services\StockService;
 use App\Support\ReportRange;
@@ -102,17 +105,45 @@ class ProductionReport
      */
     public function standaloneWastageCost(Shop $shop, ReportRange $range): int
     {
-        return (int) WastageRecord::where('shop_id', $shop->id)->whereNull('production_batch_id')
-            ->whereBetween('wastage_date', [$range->from->toDateString(), $range->to->toDateString()])
-            ->sum('total_cost');
+        return (int) $this->lossRecords($shop, $range)->whereNull('production_batch_id')->sum('total_cost');
     }
 
     public function standaloneWastageByDay(Shop $shop, ReportRange $range): array
     {
-        return WastageRecord::where('shop_id', $shop->id)->whereNull('production_batch_id')
+        return $this->lossRecords($shop, $range)->whereNull('production_batch_id')
+            ->groupBy(fn ($record) => $record->wastage_date->toDateString())
+            ->map(fn ($records) => (int) $records->sum('total_cost'))->all();
+    }
+
+    /** Include manual damage/loss at the immutable movement cost, without counting linked wastage twice. */
+    private function lossRecords(Shop $shop, ReportRange $range): Collection
+    {
+        $records = WastageRecord::where('wastage_records.shop_id', $shop->id)->countable()
             ->whereBetween('wastage_date', [$range->from->toDateString(), $range->to->toDateString()])
-            ->selectRaw('wastage_date, sum(total_cost) as cost')->groupBy('wastage_date')
-            ->get()->mapWithKeys(fn ($row) => [$row->wastage_date->toDateString() => (int) $row->cost])->all();
+            ->with('product:id,name,base_unit')->get();
+        $manual = StockMovement::where('shop_id', $shop->id)
+            ->whereIn('movement_type', [MovementType::Damage, MovementType::Loss])
+            ->where('quantity_delta', '<', 0)
+            ->whereBetween('created_at', [$range->utcFrom(), $range->utcTo()])
+            ->whereNotIn('id', WastageRecord::select('stock_movement_id')->whereNotNull('stock_movement_id'))
+            ->with('product')->get()->map(function ($movement) use ($range) {
+                $stage = match ($movement->product->kindOrDefault()) {
+                    ProductKind::RawMaterial => WastageStage::RawMaterial,
+                    ProductKind::Packaging => WastageStage::Packaging,
+                    ProductKind::FinishedGood => WastageStage::FinishedGoods,
+                };
+                $record = new WastageRecord([
+                    'product_id' => $movement->product_id, 'stage' => $stage,
+                    'quantity' => abs($movement->quantity_delta),
+                    'total_cost' => (int) round(abs($movement->quantity_delta) * $movement->unit_cost),
+                    'wastage_date' => $range->localDate($movement->created_at),
+                ]);
+                $record->setRelation('product', $movement->product);
+
+                return $record;
+            });
+
+        return $records->toBase()->concat($manual);
     }
 
     /**
@@ -265,10 +296,7 @@ class ProductionReport
     /** @return array{total_cost: int, standalone_cost: int, in_batches_cost: int, by_stage: array<int, array<string, mixed>>, top_products: array<int, array<string, mixed>>} */
     private function wastage(Shop $shop, ReportRange $range): array
     {
-        $records = WastageRecord::where('wastage_records.shop_id', $shop->id)->countable()
-            ->whereBetween('wastage_date', [$range->from->toDateString(), $range->to->toDateString()])
-            ->with('product:id,name,base_unit')
-            ->get();
+        $records = $this->lossRecords($shop, $range);
 
         return [
             'total_cost' => (int) $records->sum('total_cost'),

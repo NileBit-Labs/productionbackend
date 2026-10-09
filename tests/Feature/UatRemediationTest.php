@@ -38,6 +38,26 @@ class UatRemediationTest extends TestCase
         $this->getJson('/api/reports/dashboard')->assertOk()->assertJsonPath('today.net_profit', 25849);
     }
 
+    public function test_manual_damage_reconciles_profit_and_lot_stock_and_replays_once(): void
+    {
+        [$owner, $shop] = $this->shopWithMember();
+        $this->actingAs($owner, 'sanctum')->withHeaders($this->shopHeader($shop));
+        $input = $this->productWithStock($shop, $owner, 0, 1000, 10, ['kind' => 'raw_material']);
+        $output = $this->productWithStock($shop, $owner, 3000, 0, 0);
+        $id = $this->postJson('/api/production/batches', ['name' => 'QA manual damage', 'production_date' => $shop->today(), 'inputs' => [['product_id' => $input->id, 'planned_quantity' => 2]], 'outputs' => [['product_id' => $output->id, 'quantity' => 2]]])->assertCreated()->json('id');
+        $this->postJson("/api/production/batches/$id/complete", [])->assertOk();
+        $body = ['product_id' => $output->id, 'quantity' => 1, 'reason' => 'QA damaged bottle', 'idempotency_key' => 'manual-damage-once'];
+        $this->postJson('/api/inventory/damage', $body)->assertCreated();
+        $this->postJson('/api/inventory/damage', $body)->assertOk();
+        $this->assertSame(1.0, app(StockService::class)->current($shop->id, $output->id));
+        $this->assertSame(1.0, app(ProductionLotService::class)->remaining(ProductionLot::sole()));
+        $this->getJson('/api/reports/profit')->assertOk()->assertJsonPath('summary.wastage_losses', 1000)->assertJsonPath('summary.net_profit', -1000);
+        $this->getJson('/api/reports/production')->assertOk()->assertJsonPath('wastage.total_cost', 1000);
+        $movement = StockMovement::where('movement_type', MovementType::Damage)->sole();
+        WastageRecord::create(['shop_id' => $shop->id, 'product_id' => $output->id, 'stage' => 'finished_goods', 'quantity' => 1, 'unit_cost' => 1000, 'total_cost' => 1000, 'reason' => 'Linked loss', 'wastage_date' => $shop->today(), 'stock_movement_id' => $movement->id, 'recorded_by' => $owner->id]);
+        $this->getJson('/api/reports/profit')->assertOk()->assertJsonPath('summary.wastage_losses', 1000);
+    }
+
     public function test_catalogue_and_checkout_share_explicit_saleability_and_deltas_remove_disabled_items(): void
     {
         [$owner, $shop] = $this->shopWithMember();

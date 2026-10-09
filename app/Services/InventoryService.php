@@ -18,7 +18,7 @@ use Illuminate\Validation\ValidationException;
  */
 class InventoryService
 {
-    public function __construct(private StockService $stock, private AuditLogger $audit) {}
+    public function __construct(private StockService $stock, private AuditLogger $audit, private ProductionLotService $lots) {}
 
     /** @return array{movement: StockMovement, stock: float, replayed: bool} */
     public function adjust(Shop $shop, User $by, int $productId, ?float $delta, ?float $counted, string $reason, ?string $key): array
@@ -76,6 +76,13 @@ class InventoryService
                 }
 
                 $movement = $this->stock->record($product, $change, $type, $by, null, $reason, $unitCost, $key);
+
+                if ($change < 0) {
+                    $lotStock = $this->lots->availableQuantity($shop, $product->id, true);
+                    if ($lotStock > 0) {
+                        $this->lots->consume($shop, $product, min(abs($change), $lotStock), $by, $type->value, $movement, $reason);
+                    }
+                }
 
                 $this->audit->record($by, $shop, 'inventory.'.strtolower($type->value), $product, ['stock' => $current], [
                     'stock' => round($current + $change, 3),
