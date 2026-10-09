@@ -5,12 +5,13 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Sale extends Model
 {
     protected $fillable = [
         'shop_id', 'sale_number', 'customer_id', 'cashier_id', 'subtotal', 'discount',
-        'total', 'amount_paid', 'amount_due', 'due_date', 'status', 'idempotency_key',
+        'delivery_fee', 'total', 'amount_paid', 'amount_due', 'due_date', 'status', 'idempotency_key',
         'client_created_at', 'synced_at', 'void_reason', 'voided_by', 'voided_at',
     ];
 
@@ -20,6 +21,7 @@ class Sale extends Model
             'subtotal' => 'integer',
             'discount' => 'integer',
             'total' => 'integer',
+            'delivery_fee' => 'integer',
             'amount_paid' => 'integer',
             'amount_due' => 'integer',
             'due_date' => 'date:Y-m-d',
@@ -27,6 +29,11 @@ class Sale extends Model
             'synced_at' => 'datetime',
             'voided_at' => 'datetime',
         ];
+    }
+
+    public function deliveryOrder(): HasOne
+    {
+        return $this->hasOne(DeliveryOrder::class);
     }
 
     public function items(): HasMany

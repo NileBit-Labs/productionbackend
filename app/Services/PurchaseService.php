@@ -8,6 +8,7 @@ use App\Models\Payment;
 use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\PurchaseItem;
+use App\Models\PurchaseReturn;
 use App\Models\Shop;
 use App\Models\Supplier;
 use App\Models\User;
@@ -154,6 +155,10 @@ class PurchaseService
         return DB::transaction(function () use ($shop, $by, $purchaseId, $reason) {
             $purchase = Purchase::where('shop_id', $shop->id)->lockForUpdate()->findOrFail($purchaseId);
             $supplier = Supplier::where('shop_id', $shop->id)->lockForUpdate()->findOrFail($purchase->supplier_id);
+
+            if (PurchaseReturn::where('purchase_id', $purchase->id)->exists()) {
+                throw ValidationException::withMessages(['purchase' => 'This purchase already has supplier returns and cannot be cancelled.']);
+            }
 
             if ($purchase->status === 'cancelled') {
                 throw ValidationException::withMessages(['purchase' => 'This purchase is already cancelled.']);

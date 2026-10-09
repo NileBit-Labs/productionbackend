@@ -89,11 +89,11 @@ class SaleController extends Controller
     /** @return array<string, mixed> */
     private function receipt(Request $request, Sale $sale): array
     {
-        $sale->loadMissing('items', 'payments', 'cashier:id,name', 'customer:id,name,phone', 'refunds.items');
+        $sale->loadMissing('items', 'payments', 'cashier:id,name', 'customer:id,name,phone', 'refunds.items', 'deliveryOrder');
         $shop = $request->attributes->get('shop');
 
         return $sale->toArray() + [
-            'shop' => $shop->only('id', 'name', 'phone', 'address'),
+            'shop' => $shop->only('id', 'name', 'phone', 'address') + ['business_name' => $shop->organization?->name],
         ];
     }
 }

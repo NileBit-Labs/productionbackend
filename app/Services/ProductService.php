@@ -13,7 +13,7 @@ use Illuminate\Validation\ValidationException;
 class ProductService
 {
     /** Fields whose change is worth an audit entry (they move money or meaning). */
-    private const AUDITED = ['kind', 'name', 'family', 'size_label', 'output_equivalent', 'shelf_life_days', 'sku', 'barcode', 'category_id', 'base_unit', 'selling_price', 'current_cost', 'low_stock_threshold', 'status'];
+    private const AUDITED = ['is_saleable', 'kind', 'name', 'family', 'size_label', 'output_equivalent', 'shelf_life_days', 'sku', 'barcode', 'category_id', 'base_unit', 'selling_price', 'current_cost', 'low_stock_threshold', 'status'];
 
     public function __construct(private StockService $stock, private AuditLogger $audit) {}
 
@@ -100,7 +100,7 @@ class ProductService
     private function attributes(array $data, bool $partial = false): array
     {
         $attributes = array_intersect_key($data, array_flip([
-            'kind', 'name', 'family', 'size_label', 'output_equivalent', 'shelf_life_days',
+            'is_saleable', 'kind', 'name', 'family', 'size_label', 'output_equivalent', 'shelf_life_days',
             'category_id', 'sku', 'barcode', 'base_unit', 'selling_price', 'current_cost', 'low_stock_threshold',
         ]));
 

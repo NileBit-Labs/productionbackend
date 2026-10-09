@@ -6,6 +6,7 @@ use App\Enums\MovementType;
 use App\Enums\PaymentMethod;
 use App\Enums\ProductKind;
 use App\Models\Customer;
+use App\Models\DeliveryOrder;
 use App\Models\Payment;
 use App\Models\Product;
 use App\Models\Refund;
@@ -114,6 +115,8 @@ class SaleService
                 'voided_at' => now(),
             ]);
 
+            DeliveryOrder::where('sale_id', $locked->id)->update(['status' => 'cancelled', 'failure_reason' => 'Sale voided: '.$reason]);
+
             $this->audit->record($user, $shop, 'sale.void', $locked, $before, [
                 'status' => 'voided',
                 'reason' => $reason,
@@ -158,8 +161,7 @@ class SaleService
         // before reading stock, so two sales can't both take the last item.
         $products = Product::with('units')
             ->where('shop_id', $shop->id)
-            ->where('status', 'active')
-            ->where('kind', ProductKind::FinishedGood)
+            ->saleable()
             ->whereIn('id', collect($lines)->pluck('product_id')->unique())
             ->orderBy('id')
             ->lockForUpdate()
@@ -228,7 +230,7 @@ class SaleService
 
         foreach ($lines as $i => $line) {
             $productId = (int) $line['product_id'];
-            $stock = $available[$productId] ?? 0.0;
+            $stock = ($available[$productId] ?? 0.0) - $this->lots->expiredQuantity($shop, $productId);
 
             if ($baseNeeded[$productId] > $stock + 0.0005) {
                 $name = $products[$productId]->name;
@@ -243,7 +245,8 @@ class SaleService
             throw ValidationException::withMessages(['discount' => 'Discounts cannot be more than the sale amount.']);
         }
 
-        $total = $gross - $discount;
+        $deliveryFee = ($data['fulfillment']['type'] ?? null) === 'delivery' ? (int) ($data['fulfillment']['delivery_fee'] ?? 0) : 0;
+        $total = $gross - $discount + $deliveryFee;
 
         if ($total <= 0) {
             throw ValidationException::withMessages(['items' => 'The sale total must be more than zero.']);
@@ -272,6 +275,7 @@ class SaleService
             'customer_id' => $customer?->id,
             'cashier_id' => $cashier->id,
             'subtotal' => $gross,
+            'delivery_fee' => $deliveryFee,
             'discount' => $discount,
             'total' => $total,
             'amount_paid' => $amountPaid,
@@ -282,6 +286,12 @@ class SaleService
             'client_created_at' => $data['client_created_at'] ?? null,
             'synced_at' => $data['synced_at'] ?? null,
         ]);
+
+        if (! empty($data['fulfillment'])) {
+            $details = $data['fulfillment'];
+            DeliveryOrder::create(array_intersect_key($details, array_flip(['recipient_name', 'recipient_phone', 'address', 'location_notes', 'instructions', 'notes', 'requested_at'])) + ['shop_id' => $shop->id, 'sale_id' => $sale->id, 'fulfillment_type' => $details['type'], 'status' => 'pending']);
+            $this->audit->record($cashier, $shop, 'delivery.create', $sale, null, ['fulfillment_type' => $details['type'], 'delivery_fee' => $deliveryFee]);
+        }
 
         if (! empty($data['client_created_at'])) {
             $happenedAt = Carbon::parse($data['client_created_at']);

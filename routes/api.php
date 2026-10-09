@@ -5,15 +5,18 @@ use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CustomerController;
+use App\Http\Controllers\DeliveryOrderController;
 use App\Http\Controllers\ExpenseCategoryController;
 use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\MeasurementUnitController;
+use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\PosCatalogController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductImportController;
 use App\Http\Controllers\ProductionBatchController;
 use App\Http\Controllers\PurchaseController;
+use App\Http\Controllers\PurchaseReturnController;
 use App\Http\Controllers\RecipeController;
 use App\Http\Controllers\RefundController;
 use App\Http\Controllers\ReportController;
@@ -72,6 +75,14 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::middleware('shop.access:owner,manager')->group(function () {
+        Route::patch('/organization', [OrganizationController::class, 'update']);
+        Route::post('/purchases/{purchase}/returns', [PurchaseReturnController::class, 'store']);
+
+        Route::get('/delivery/orders', [DeliveryOrderController::class, 'index']);
+        Route::get('/delivery/orders/{order}', [DeliveryOrderController::class, 'show']);
+        Route::post('/delivery/orders/{order}/status', [DeliveryOrderController::class, 'transition']);
+        Route::post('/delivery/orders/{order}/payments', [DeliveryOrderController::class, 'pay']);
+
         Route::post('/sales/{sale}/void', [SaleController::class, 'void']);
         Route::get('/sales/{sale}/refundable', [RefundController::class, 'refundable']);
         Route::post('/sales/{sale}/refund', [RefundController::class, 'store']);

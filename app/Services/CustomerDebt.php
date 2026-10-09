@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\CustomerLedgerEntry;
+use App\Models\Payment;
 use App\Models\Refund;
 use App\Models\Sale;
 use Illuminate\Support\Collection;
@@ -26,6 +27,7 @@ class CustomerDebt
 
         $repaid = CustomerLedgerEntry::whereIn('customer_id', $customerIds)
             ->where('type', CustomerLedger::PAYMENT)
+            ->where(fn ($query) => $query->whereNull('reference_id')->orWhereNotIn('reference_id', Payment::whereNotNull('sale_id')->select('id')))
             ->selectRaw('customer_id, -SUM(amount) as repaid')
             ->groupBy('customer_id')
             ->pluck('repaid', 'customer_id');
@@ -45,6 +47,9 @@ class CustomerDebt
             ->groupBy('sale_id')
             ->pluck('cancelled', 'sale_id');
 
+        $targeted = Payment::whereIn('sale_id', $sales->pluck('id'))->whereIn('id', CustomerLedgerEntry::whereIn('customer_id', $customerIds)->where('type', CustomerLedger::PAYMENT)->select('reference_id'))
+            ->where('direction', 'in')->selectRaw('sale_id, sum(amount) as amount')->groupBy('sale_id')->pluck('amount', 'sale_id');
+
         $sales = $sales->groupBy('customer_id');
 
         $result = [];
@@ -54,7 +59,7 @@ class CustomerDebt
             $open = [];
 
             foreach ($sales->get($customerId, collect()) as $sale) {
-                $due = max(0, $sale->amount_due - (int) ($cancelled[$sale->id] ?? 0));
+                $due = max(0, $sale->amount_due - (int) ($cancelled[$sale->id] ?? 0) - (int) ($targeted[$sale->id] ?? 0));
                 $applied = min($remaining, $due);
                 $remaining -= $applied;
                 $stillOwed = $due - $applied;

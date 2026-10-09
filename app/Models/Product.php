@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\ProductKind;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -12,13 +13,14 @@ class Product extends Model
     protected $attributes = ['kind' => 'finished_good'];
 
     protected $fillable = [
-        'shop_id', 'category_id', 'kind', 'name', 'family', 'size_label', 'output_equivalent', 'shelf_life_days',
+        'shop_id', 'category_id', 'is_saleable', 'kind', 'name', 'family', 'size_label', 'output_equivalent', 'shelf_life_days',
         'sku', 'barcode', 'base_unit', 'selling_price', 'current_cost', 'low_stock_threshold', 'status',
     ];
 
     protected function casts(): array
     {
         return [
+            'is_saleable' => 'boolean',
             'selling_price' => 'integer',
             'current_cost' => 'integer',
             'low_stock_threshold' => 'float',
@@ -32,6 +34,19 @@ class Product extends Model
     public function kindOrDefault(): ProductKind
     {
         return $this->kind ?? ProductKind::FinishedGood;
+    }
+
+    public function canSell(): bool
+    {
+        return $this->status === 'active' && $this->selling_price > 0
+            && ($this->is_saleable ?? $this->kindOrDefault() === ProductKind::FinishedGood);
+    }
+
+    public function scopeSaleable(Builder $query): void
+    {
+        $query->where('status', 'active')->where('selling_price', '>', 0)
+            ->where(fn ($q) => $q->where('is_saleable', true)
+                ->orWhere(fn ($q) => $q->whereNull('is_saleable')->where('kind', ProductKind::FinishedGood)));
     }
 
     public function category(): BelongsTo

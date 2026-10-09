@@ -9,13 +9,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Refund extends Model
 {
     protected $fillable = [
-        'shop_id', 'sale_id', 'total_refund', 'cash_refund', 'balance_credit', 'method',
+        'delivery_fee_refund', 'shop_id', 'sale_id', 'total_refund', 'cash_refund', 'balance_credit', 'method',
         'reason', 'approved_by', 'idempotency_key',
     ];
 
     protected function casts(): array
     {
         return [
+            'delivery_fee_refund' => 'integer',
             'total_refund' => 'integer',
             'cash_refund' => 'integer',
             'balance_credit' => 'integer',

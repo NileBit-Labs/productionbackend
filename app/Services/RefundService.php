@@ -117,6 +117,13 @@ class RefundService
             $total += $amount;
         }
 
+        $feeRefund = (int) ($data['delivery_fee_refund'] ?? 0);
+        $remainingFee = $sale->delivery_fee - (int) $sale->refunds()->sum('delivery_fee_refund');
+        if ($feeRefund < 0 || $feeRefund > $remainingFee) {
+            throw ValidationException::withMessages(['delivery_fee_refund' => 'Refund exceeds the remaining delivery fee.']);
+        }
+        $total += $feeRefund;
+
         if ($total <= 0) {
             throw ValidationException::withMessages(['lines' => 'There is nothing left to refund on this sale.']);
         }
@@ -126,14 +133,14 @@ class RefundService
         $debtCredit = 0;
 
         if ($sale->customer_id && $sale->amount_due > 0) {
-            $alreadyCredited = (int) Refund::where('sale_id', $sale->id)->sum('balance_credit');
             $customer = Customer::find($sale->customer_id);
-            $debtCredit = max(0, min($total, $sale->amount_due - $alreadyCredited, $this->ledger->balance($customer)));
+            $debtCredit = max(0, min($total, (int) (collect(app(CustomerDebt::class)->openSales([$customer->id])[$customer->id] ?? [])->firstWhere('sale_id', $sale->id)['owed'] ?? 0), $this->ledger->balance($customer)));
         }
 
         return [
             'lines' => $lines,
             'total_refund' => $total,
+            'delivery_fee_refund' => $feeRefund,
             'balance_credit' => $debtCredit,
             'cash_refund' => $total - $debtCredit,
         ];
@@ -161,6 +168,7 @@ class RefundService
                     'shop_id' => $shop->id,
                     'sale_id' => $locked->id,
                     'total_refund' => $plan['total_refund'],
+                    'delivery_fee_refund' => $plan['delivery_fee_refund'],
                     'cash_refund' => $plan['cash_refund'],
                     'balance_credit' => $plan['balance_credit'],
                     'method' => $plan['cash_refund'] > 0 ? $data['method'] : null,

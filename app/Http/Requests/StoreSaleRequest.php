@@ -37,6 +37,17 @@ class StoreSaleRequest extends FormRequest
             'items.*.discount' => ['nullable', 'integer', 'min:0'],
             'items.*.unit_price' => ['nullable', 'integer', 'min:0'],
 
+            'fulfillment' => ['nullable', 'array'],
+            'fulfillment.type' => ['required_with:fulfillment', 'in:pickup,delivery'],
+            'fulfillment.recipient_name' => ['required_with:fulfillment', 'string', 'max:255'],
+            'fulfillment.recipient_phone' => ['required_with:fulfillment', 'string', 'max:100'],
+            'fulfillment.address' => ['required_if:fulfillment.type,delivery', 'nullable', 'string', 'max:500'],
+            'fulfillment.location_notes' => ['nullable', 'string', 'max:1000'],
+            'fulfillment.instructions' => ['nullable', 'string', 'max:1000'],
+            'fulfillment.notes' => ['nullable', 'string', 'max:1000'],
+            'fulfillment.requested_at' => ['nullable', 'date'],
+            'fulfillment.delivery_fee' => ['nullable', 'integer', 'min:0', 'max:1000000000000'],
+
             'payments' => ['nullable', 'array', 'max:10'],
             'payments.*.method' => ['required', Rule::enum(PaymentMethod::class)],
             'payments.*.amount' => ['required', 'integer', 'min:1'],

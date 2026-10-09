@@ -16,6 +16,7 @@ class ManagedProductPresenter
         return [
             'id' => $product->id,
             'kind' => $product->kindOrDefault()->value,
+            'is_saleable' => $product->is_saleable,
             'name' => $product->name,
             'family' => $product->family,
             'size_label' => $product->size_label,

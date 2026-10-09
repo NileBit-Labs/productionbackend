@@ -7,7 +7,6 @@ use App\Enums\ExpenseType;
 use App\Models\ProductionBatch;
 use App\Models\ProductionBatchOutput;
 use App\Services\ProductionService;
-use App\Services\ProductionLotService;
 use App\Support\PerPage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -64,10 +63,11 @@ class ProductionBatchController extends Controller
             'expiry_date' => ['nullable', 'date', 'after_or_equal:production_date'],
             'planned_yield' => ['nullable', 'numeric', 'gt:0', 'max:1000000'],
             'yield_unit' => ['nullable', 'string', 'max:50'],
+            'yield_unit' => ['nullable', 'string', 'max:50'],
             'responsible_user_id' => ['nullable', 'integer'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'idempotency_key' => ['nullable', 'string', 'max:100'],
-        ] + $this->inputRules('planned_quantity') + $this->outputRules());
+        ] + $this->draftCostRules() + $this->inputRules('planned_quantity') + $this->outputRules());
 
         $result = $production->plan($shop, $request->user(), $data);
 
@@ -88,9 +88,10 @@ class ProductionBatchController extends Controller
             'production_date' => ['sometimes', 'date', 'before_or_equal:'.$shop->today()],
             'expiry_date' => ['nullable', 'date'],
             'planned_yield' => ['nullable', 'numeric', 'gt:0', 'max:1000000'],
+            'yield_unit' => ['nullable', 'string', 'max:50'],
             'responsible_user_id' => ['nullable', 'integer'],
             'notes' => ['nullable', 'string', 'max:2000'],
-        ] + $this->inputRules('planned_quantity') + $this->outputRules());
+        ] + $this->draftCostRules() + $this->inputRules('planned_quantity') + $this->outputRules());
 
         $production->updateDraft($shop, $request->user(), $batch, $data);
 
@@ -106,16 +107,7 @@ class ProductionBatchController extends Controller
             'expiry_date' => ['nullable', 'date'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'idempotency_key' => ['nullable', 'string', 'max:100'],
-            'wastage' => ['nullable', 'array', 'max:100'],
-            'wastage.*.product_id' => ['required', 'integer'],
-            'wastage.*.quantity' => ['required', 'numeric', 'gt:0', 'max:1000000'],
-            'wastage.*.reason' => ['required', 'string', 'min:3', 'max:255'],
-            'direct_expenses' => ['nullable', 'array', 'max:50'],
-            'direct_expenses.*.type' => ['required', Rule::in([ExpenseType::DirectLabour->value, ExpenseType::DirectProduction->value])],
-            'direct_expenses.*.category' => ['required', 'string', 'max:100'],
-            'direct_expenses.*.amount' => ['required', 'integer', 'min:1', 'max:1000000000000'],
-            'direct_expenses.*.description' => ['nullable', 'string', 'max:500'],
-        ] + $this->inputRules('actual_quantity', min: 'min:0') + $this->outputRules());
+        ] + $this->draftCostRules() + $this->inputRules('actual_quantity', min: 'min:0') + $this->outputRules());
 
         $production->complete($shop, $request->user(), $batch, $data);
 
@@ -132,6 +124,21 @@ class ProductionBatchController extends Controller
     }
 
     /** @return array<string, mixed> */
+    private function draftCostRules(): array
+    {
+        return [
+            'wastage' => ['nullable', 'array', 'max:100'],
+            'wastage.*.product_id' => ['required', 'integer'],
+            'wastage.*.quantity' => ['required', 'numeric', 'gt:0', 'max:1000000'],
+            'wastage.*.reason' => ['required', 'string', 'min:3', 'max:255'],
+            'direct_expenses' => ['nullable', 'array', 'max:50'],
+            'direct_expenses.*.type' => ['required', Rule::in([ExpenseType::DirectLabour->value, ExpenseType::DirectProduction->value])],
+            'direct_expenses.*.category' => ['required', 'string', 'max:100'],
+            'direct_expenses.*.amount' => ['required', 'integer', 'min:1', 'max:1000000000000'],
+            'direct_expenses.*.description' => ['nullable', 'string', 'max:500'],
+        ];
+    }
+
     private function inputRules(string $quantityField, string $min = 'gt:0'): array
     {
         return [
@@ -199,6 +206,7 @@ class ProductionBatchController extends Controller
         // array_merge, not +: the detailed inputs and outputs replace the summary's short ones.
         return array_merge($this->summary($batch), [
             'notes' => $batch->notes,
+            'draft_payload' => $batch->draft_payload,
             'created_by' => $batch->creator?->name,
             'completed_by' => $batch->completer?->name,
             'completed_at' => $batch->completed_at?->toIso8601String(),

@@ -16,6 +16,7 @@ class ProductRules
         $unique = fn (string $column) => Rule::unique('products', $column)->where('shop_id', $shopId)->ignore($ignoreId);
 
         return [
+            'is_saleable' => ['sometimes', 'nullable', 'boolean'],
             'kind' => ['sometimes', Rule::enum(ProductKind::class)],
             'name' => [$required, 'string', 'max:255'],
             'family' => ['nullable', 'string', 'max:255'],

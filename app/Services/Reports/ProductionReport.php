@@ -107,6 +107,14 @@ class ProductionReport
             ->sum('total_cost');
     }
 
+    public function standaloneWastageByDay(Shop $shop, ReportRange $range): array
+    {
+        return WastageRecord::where('shop_id', $shop->id)->whereNull('production_batch_id')
+            ->whereBetween('wastage_date', [$range->from->toDateString(), $range->to->toDateString()])
+            ->selectRaw('wastage_date, sum(total_cost) as cost')->groupBy('wastage_date')
+            ->get()->mapWithKeys(fn ($row) => [$row->wastage_date->toDateString() => (int) $row->cost])->all();
+    }
+
     /**
      * Finished stock close to (or past) its expiry, batch by batch.
      *
@@ -128,7 +136,9 @@ class ProductionReport
 
         foreach ($lots as $lot) {
             $remaining = round($lot->produced_quantity + $lot->movements->sum('quantity_delta'), 3);
-            if ($remaining <= 0) continue;
+            if ($remaining <= 0) {
+                continue;
+            }
             $expiry = $lot->expiry_date->toDateString();
             $rows[] = [
                 'product_id' => $lot->product_id,

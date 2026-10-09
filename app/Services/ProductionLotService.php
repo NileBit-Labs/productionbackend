@@ -2,11 +2,11 @@
 
 namespace App\Services;
 
+use App\Models\Product;
 use App\Models\ProductionBatch;
 use App\Models\ProductionBatchOutput;
 use App\Models\ProductionLot;
 use App\Models\ProductionLotMovement;
-use App\Models\Product;
 use App\Models\Shop;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
@@ -36,12 +36,19 @@ class ProductionLotService
 
         foreach ($lots as $lot) {
             $available = $this->remaining($lot);
-            if ($available <= 0) continue;
+            if ($available <= 0) {
+                continue;
+            }
+            if ($type === 'SALE' && $lot->expiry_date && $lot->expiry_date->toDateString() < $shop->today()) {
+                continue;
+            }
             $take = min($left, $available);
             $this->movement($lot, -$take, $type, $reference, $by, $reason);
             $allocations[] = ['lot' => $lot, 'quantity' => $take];
             $left = round($left - $take, 3);
-            if ($left <= 0.0005) break;
+            if ($left <= 0.0005) {
+                break;
+            }
         }
 
         if ($left > 0.0005) {
@@ -64,14 +71,18 @@ class ProductionLotService
         $left = round($quantity, 3);
         foreach ($moves as $move) {
             $alreadyRestored = (float) ProductionLotMovement::where('movement_type', $type)
-                ->where('reference_type', $reference::class)->where('reference_id', $reference->getKey())
-                ->where('reason', 'like', 'lot-source:'.$move->id.'%')->sum('quantity_delta');
+                ->where('production_lot_id', $move->production_lot_id)
+                ->where(fn ($query) => $query->where('reason', 'lot-source:'.$move->id)->orWhere('reason', 'like', 'lot-source:'.$move->id.' %'))->sum('quantity_delta');
             $available = abs($move->quantity_delta) - $alreadyRestored;
-            if ($available <= 0) continue;
+            if ($available <= 0) {
+                continue;
+            }
             $put = min($left, $available);
             $this->movement($move->lot, $put, $type, $reference, $by, 'lot-source:'.$move->id.($reason ? ' '.$reason : ''));
             $left = round($left - $put, 3);
-            if ($left <= 0.0005) return round($quantity, 3);
+            if ($left <= 0.0005) {
+                return round($quantity, 3);
+            }
         }
 
         return round($quantity - $left, 3);
@@ -81,6 +92,11 @@ class ProductionLotService
     public function availableQuantity(Shop $shop, int $productId, bool $lock = false): float
     {
         return round($this->available($shop, $productId, $lock)->sum(fn (ProductionLot $lot) => $this->remaining($lot)), 3);
+    }
+
+    public function expiredQuantity(Shop $shop, int $productId): float
+    {
+        return round($this->available($shop, $productId)->filter(fn ($lot) => $lot->expiry_date && $lot->expiry_date->toDateString() < $shop->today())->sum(fn ($lot) => max(0, $this->remaining($lot))), 3);
     }
 
     public function remaining(ProductionLot $lot): float
@@ -93,7 +109,10 @@ class ProductionLotService
     {
         $query = ProductionLot::where('shop_id', $shop->id)->where('product_id', $productId)
             ->orderByRaw('expiry_date is null, expiry_date')->orderBy('production_date')->orderBy('id');
-        if ($lock) $query->lockForUpdate();
+        if ($lock) {
+            $query->lockForUpdate();
+        }
+
         return $query->get();
     }
 

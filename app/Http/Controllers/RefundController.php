@@ -19,6 +19,7 @@ class RefundController extends Controller
 
         return response()->json([
             'status' => $model->status,
+            'delivery_fee_remaining' => max(0, $model->delivery_fee - (int) $model->refunds()->sum('delivery_fee_refund')),
             'items' => $refunds->refundable($model),
             'customer' => $model->customer_id ? [
                 'name' => $model->customer->name,
@@ -33,7 +34,8 @@ class RefundController extends Controller
         $dryRun = $request->boolean('dry_run');
 
         $data = $request->validate([
-            'lines' => ['required', 'array', 'min:1', 'max:200'],
+            'delivery_fee_refund' => ['nullable', 'integer', 'min:0'],
+            'lines' => ['present', 'array', 'max:200'],
             'lines.*.sale_item_id' => ['required', 'integer'],
             'lines.*.quantity' => ['required', 'numeric', 'gt:0'],
             'lines.*.restock' => ['nullable', 'boolean'],

@@ -85,8 +85,9 @@ class ShiftService
     {
         $until ??= $shift->closed_at ?? now();
 
-        $happenedAt = "(case when payments.direction = 'in' and payments.sale_id is not null then sales.created_at else payments.created_at end)";
-        $source = "(case when payments.sale_id is null then 'account' else 'sale' end)";
+        $collection = '(exists (select 1 from delivery_payment_attempts where delivery_payment_attempts.payment_id = payments.id))';
+        $happenedAt = "(case when payments.direction = 'in' and payments.sale_id is not null and not $collection then sales.created_at else payments.created_at end)";
+        $source = "(case when payments.sale_id is null or $collection then 'account' else 'sale' end)";
 
         $rows = DB::table('payments')
             ->leftJoin('sales', 'sales.id', '=', 'payments.sale_id')

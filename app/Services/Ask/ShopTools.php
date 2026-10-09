@@ -6,6 +6,7 @@ use App\Enums\Role;
 use App\Models\Product;
 use App\Models\Shop;
 use App\Services\Reports\DebtReport;
+use App\Services\Reports\ProductionReport;
 use App\Services\Reports\SalesAnalytics;
 use App\Services\Reports\StockReport;
 use App\Support\ReportRange;
@@ -23,12 +24,13 @@ class ShopTools
 {
     private const PERIODS = ['today', 'yesterday', 'this_week', 'last_week', 'this_month', 'last_month', 'last_7_days', 'last_30_days', 'this_year'];
 
-    private const OWNER_ONLY = ['get_profit_summary'];
+    private const OWNER_ONLY = ['get_profit_summary', 'get_production_summary'];
 
     public function __construct(
         private SalesAnalytics $sales,
         private StockReport $stock,
         private DebtReport $debt,
+        private ProductionReport $production,
     ) {}
 
     /** @return array<int, array<string, mixed>> */
@@ -41,6 +43,8 @@ class ShopTools
         ];
 
         $tools = [
+            $this->tool('get_production_summary', 'Production costs, in-batch and standalone wastage for a period. Batch wastage is already capitalized.', $when),
+            $this->tool('get_expiring_batches', 'Finished lots expiring within fourteen days, including expired stock. No shelf life is assumed.', []),
             $this->tool('get_sales_summary', 'Sales for a period: number of sales, net sales (after refunds), average sale, credit given, the best day, and how it compares with the period just before it. Use this first for "how are sales / how are we doing".', $when),
             $this->tool('get_daily_sales', 'Net sales and number of sales per day, week or month over a period, for trends and busiest days.', $when + [
                 'group_by' => ['type' => 'string', 'description' => 'day, week or month. Default depends on the length of the period.'],
@@ -84,6 +88,8 @@ class ShopTools
         }
 
         return match ($name) {
+            'get_production_summary' => ['result' => $this->production->report($shop, $this->range($args, $shop)), 'label' => 'Production'],
+            'get_expiring_batches' => ['result' => ['lots' => array_map(fn ($lot) => $role === Role::Owner ? $lot : array_diff_key($lot, ['value_at_cost' => true]), $this->production->expiring($shop))], 'label' => 'Expiring lots'],
             'get_sales_summary' => $this->salesSummary($args, $shop),
             'get_daily_sales' => $this->dailySales($args, $shop),
             'get_top_products' => $this->topProducts($args, $shop, $role),
@@ -407,6 +413,8 @@ class ShopTools
             $cost = $this->sales->costOfGoods($shop, $r);
             $expenses = array_sum(array_column($this->sales->expensesByCategory($shop, $r), 'amount'));
 
+            $wastage = $this->production->standaloneWastageCost($shop, $r);
+
             return [
                 'net_sales' => $net,
                 'cost_of_goods' => $cost,
@@ -414,6 +422,8 @@ class ShopTools
                 'margin_percent' => SalesAnalytics::margin($net - $cost, $net),
                 'expenses' => $expenses,
                 'left_after_expenses' => $net - $cost - $expenses,
+                'wastage_losses' => $wastage,
+                'net_profit' => $net - $cost - $expenses - $wastage,
             ];
         };
 

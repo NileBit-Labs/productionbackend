@@ -12,6 +12,7 @@ use App\Models\Product;
 use App\Models\ProductionBatch;
 use App\Models\ProductionBatchInput;
 use App\Models\ProductionBatchOutput;
+use App\Models\ProductionLot;
 use App\Models\Recipe;
 use App\Models\Shop;
 use App\Models\User;
@@ -76,19 +77,23 @@ class ProductionService
             $batch = $this->lockBatch($shop, $batchId);
             $this->assertDraft($batch);
 
-            $before = $batch->only(['name', 'production_date', 'expiry_date', 'planned_yield', 'responsible_user_id', 'notes']);
+            $before = $batch->only(['name', 'production_date', 'expiry_date', 'planned_yield', 'yield_unit', 'responsible_user_id', 'notes']);
 
             if (array_key_exists('responsible_user_id', $data)) {
                 $this->assertMember($shop, $data['responsible_user_id']);
             }
 
-            $batch->fill(array_intersect_key($data, array_flip(['name', 'production_date', 'expiry_date', 'planned_yield', 'responsible_user_id', 'notes'])));
+            $batch->fill(array_intersect_key($data, array_flip(['name', 'production_date', 'expiry_date', 'planned_yield', 'yield_unit', 'responsible_user_id', 'notes'])));
 
             // A new planned yield rescales the recipe unless the caller also sent their own inputs.
             if ($batch->isDirty('planned_yield') && ! array_key_exists('inputs', $data) && $batch->recipe_id) {
                 $this->replaceInputs($shop, $batch, $this->scaledRecipe($batch->recipe()->with('items')->first(), (float) $batch->planned_yield));
             }
 
+            $batch->draft_payload = array_intersect_key($data, array_flip(['direct_expenses', 'wastage'])) + ($batch->draft_payload ?? []);
+            if ($batch->expiry_date && $batch->expiry_date->lt($batch->production_date)) {
+                throw ValidationException::withMessages(['expiry_date' => 'Expiry cannot be before production.']);
+            }
             $batch->save();
 
             if (array_key_exists('inputs', $data)) {
@@ -118,6 +123,7 @@ class ProductionService
                 return $batch;
             }
             $this->assertDraft($batch);
+            $data += $batch->draft_payload ?? [];
 
             $batch->fill(array_intersect_key($data, array_flip(['production_date', 'expiry_date', 'notes'])));
 
@@ -347,6 +353,7 @@ class ProductionService
             'shop_id' => $shop->id,
             'batch_number' => sprintf('B-%06d', $number),
             'recipe_id' => $recipe?->id,
+            'draft_payload' => array_intersect_key($data, array_flip(['direct_expenses', 'wastage'])),
             'name' => $data['name'] ?? $recipe->name,
             'status' => BatchStatus::Draft,
             'production_date' => $data['production_date'] ?? $shop->today(),
@@ -579,8 +586,10 @@ class ProductionService
         // Product-level stock cannot prove that this batch's own output still exists:
         // later production or a purchase may have replenished the same SKU. Lots can.
         foreach ($outputs as $output) {
-            $lot = \App\Models\ProductionLot::where('production_batch_output_id', $output->id)->lockForUpdate()->first();
-            if (! $lot) throw ValidationException::withMessages(['batch' => 'This legacy batch has no lot ledger and cannot be safely cancelled.']);
+            $lot = ProductionLot::where('production_batch_output_id', $output->id)->lockForUpdate()->first();
+            if (! $lot) {
+                throw ValidationException::withMessages(['batch' => 'This legacy batch has no lot ledger and cannot be safely cancelled.']);
+            }
             $this->lots->assertWholeLotAvailable($lot);
         }
 
@@ -588,7 +597,7 @@ class ProductionService
 
         foreach ($outputs as $output) {
             $this->stock->record($products[$output->product_id], -$output->quantity, MovementType::ProductionReversal, $by, $batch, $note, $output->unit_cost);
-            $lot = \App\Models\ProductionLot::where('production_batch_output_id', $output->id)->lockForUpdate()->firstOrFail();
+            $lot = ProductionLot::where('production_batch_output_id', $output->id)->lockForUpdate()->firstOrFail();
             $this->lots->consumeLot($lot, $output->quantity, $by, 'PRODUCTION_REVERSAL', $batch, $note);
         }
 

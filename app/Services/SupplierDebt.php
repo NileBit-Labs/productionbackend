@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Purchase;
+use App\Models\PurchaseReturn;
 use App\Models\SupplierLedgerEntry;
 use Illuminate\Support\Collection;
 
@@ -38,6 +39,8 @@ class SupplierDebt
             ->get(['id', 'supplier_id', 'purchase_number', 'amount_due', 'purchase_date', 'created_at'])
             ->groupBy('supplier_id');
 
+        $returned = PurchaseReturn::whereIn('purchase_id', $purchases->flatten()->pluck('id'))->selectRaw('purchase_id, sum(balance_credit) as credit')->groupBy('purchase_id')->pluck('credit', 'purchase_id');
+
         $result = [];
 
         foreach ($supplierIds as $supplierId) {
@@ -45,9 +48,10 @@ class SupplierDebt
             $open = [];
 
             foreach ($purchases->get($supplierId, collect()) as $purchase) {
-                $applied = min($remaining, $purchase->amount_due);
+                $due = max(0, $purchase->amount_due - (int) ($returned[$purchase->id] ?? 0));
+                $applied = min($remaining, $due);
                 $remaining -= $applied;
-                $stillOwed = $purchase->amount_due - $applied;
+                $stillOwed = $due - $applied;
 
                 if ($stillOwed > 0) {
                     $open[] = [

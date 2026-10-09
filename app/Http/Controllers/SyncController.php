@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Product;
+use App\Models\ProductionLot;
 use App\Services\SyncService;
 use App\Support\PosProductPresenter;
 use Illuminate\Http\JsonResponse;
@@ -57,13 +58,14 @@ class SyncController extends Controller
             ->orderBy('id');
 
         if ($cursor) {
-            $query->where(function ($q) use ($cursor) {
+            $query->where(function ($q) use ($cursor, $shop) {
                 $q->where('updated_at', '>', $cursor)
+                    ->orWhereIn('id', ProductionLot::where('shop_id', $shop->id)->where('expiry_date', '<', $shop->today())->select('product_id'))
                     ->orWhereHas('stockMovements', fn ($m) => $m->where('created_at', '>', $cursor))
                     ->orWhereHas('units', fn ($u) => $u->where('updated_at', '>', $cursor));
             });
         } else {
-            $query->where('status', 'active');
+            $query->saleable();
         }
 
         return response()->json([

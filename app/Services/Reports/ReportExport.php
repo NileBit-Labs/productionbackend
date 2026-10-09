@@ -19,6 +19,7 @@ class ReportExport
         private SalesAnalytics $sales,
         private StockReport $stock,
         private DebtReport $debt,
+        private ProductionReport $production,
     ) {}
 
     /** @return array<string, mixed> */
@@ -113,6 +114,7 @@ class ReportExport
         $cost = array_sum(array_column($daily, 'cost_of_goods'));
         $expenseTotal = array_sum(array_column($expenses, 'amount'));
         $gross = $salesSummary['net_sales'] - $cost;
+        $wastage = $this->production->standaloneWastageCost($shop, $range);
 
         return [
             'summary' => [
@@ -122,6 +124,8 @@ class ReportExport
                 'margin' => SalesAnalytics::margin($gross, $salesSummary['net_sales']),
                 'expenses' => $expenseTotal,
                 'operating_profit' => $gross - $expenseTotal,
+                'wastage_losses' => $wastage,
+                'net_profit' => $gross - $expenseTotal - $wastage,
             ],
             'products' => collect($this->sales->products($shop, $range))
                 ->map(fn (array $row) => $row + [

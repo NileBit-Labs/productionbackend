@@ -53,6 +53,8 @@ class DashboardReport
 
         if ($role === Role::Owner) {
             $todayFigures['gross_profit'] = $summary['net_sales'] - $this->sales->costOfGoods($shop, $today);
+            $todayFigures['wastage_losses'] = $this->production->standaloneWastageCost($shop, $today);
+            $todayFigures['net_profit'] = $todayFigures['gross_profit'] - $todayFigures['expenses'] - $todayFigures['wastage_losses'];
         }
 
         $week = ReportRange::lastDays($shop, 7);

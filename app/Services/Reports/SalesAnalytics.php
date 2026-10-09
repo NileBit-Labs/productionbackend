@@ -34,7 +34,7 @@ class SalesAnalytics
     public function summary(Shop $shop, ReportRange $range): array
     {
         $sold = $this->sales($shop, $range)
-            ->selectRaw('COUNT(*) as n, COALESCE(SUM(total), 0) as gross, COALESCE(SUM(discount), 0) as discounts, COALESCE(SUM(amount_due), 0) as credit')
+            ->selectRaw('COUNT(*) as n, COALESCE(SUM(total), 0) as gross, COALESCE(SUM(delivery_fee), 0) as delivery_fees, COALESCE(SUM(discount), 0) as discounts, COALESCE(SUM(amount_due), 0) as credit')
             ->first();
 
         $voided = DB::table('sales')->where('shop_id', $shop->id)->where('status', 'voided')
@@ -43,7 +43,7 @@ class SalesAnalytics
             ->first();
 
         $refunds = $this->refunds($shop, $range)
-            ->selectRaw('COUNT(*) as n, COALESCE(SUM(total_refund), 0) as total')
+            ->selectRaw('COUNT(*) as n, COALESCE(SUM(delivery_fee_refund), 0) as fee_refunds, COALESCE(SUM(total_refund), 0) as total')
             ->first();
 
         $count = (int) $sold->n;
@@ -52,6 +52,8 @@ class SalesAnalytics
         return [
             'sales_count' => $count,
             'gross_sales' => $gross,
+            'delivery_fees' => (int) $sold->delivery_fees - (int) $refunds->fee_refunds,
+            'product_net_sales' => $gross - (int) $sold->delivery_fees - (int) $refunds->total + (int) $refunds->fee_refunds,
             'discounts' => (int) $sold->discounts,
             'refund_count' => (int) $refunds->n,
             'refunds' => (int) $refunds->total,
