@@ -99,7 +99,7 @@ class PurchaseController extends Controller
             ->withCount('items')
             ->findOrFail($id);
 
-        $payments = Payment::where('purchase_id', $purchase->id)->orderBy('id')->get(['id', 'amount', 'method', 'reference', 'created_at']);
+        $payments = Payment::where('purchase_id', $purchase->id)->orderBy('id')->get(['id', 'amount', 'method', 'reference', 'direction', 'created_at']);
 
         return $this->format($purchase, $debt->owedOn($purchase)) + [
             'received_by' => $purchase->receiver->name,
@@ -122,6 +122,7 @@ class PurchaseController extends Controller
                 'id' => $p->id,
                 'amount' => (int) $p->amount,
                 'method' => $p->method->value,
+                'direction' => $p->direction,
                 'reference' => $p->reference,
                 'created_at' => $p->created_at,
             ])->values(),

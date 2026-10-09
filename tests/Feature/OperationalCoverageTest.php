@@ -46,6 +46,7 @@ class OperationalCoverageTest extends TestCase
         $paidBody = ['idempotency_key' => 'paid-return', 'reason' => 'QA paid return', 'lines' => [['purchase_item_id' => $paid['items'][0]['id'], 'quantity' => 1]]];
         $this->postJson('/api/purchases/'.$paid['id'].'/returns', $paidBody)->assertUnprocessable();
         $this->postJson('/api/purchases/'.$paid['id'].'/returns', $paidBody + ['refund_received' => true, 'method' => 'BANK'])->assertCreated()->assertJsonPath('cash_refund', 1000);
+        $this->getJson('/api/purchases/'.$paid['id'])->assertOk()->assertJsonPath('payments.0.direction', 'out')->assertJsonPath('payments.1.direction', 'in');
         $this->postJson('/api/purchases/'.$paid['id'].'/cancel', ['reason' => 'QA cannot cancel paid'])->assertUnprocessable();
     }
 
