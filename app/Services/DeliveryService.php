@@ -41,6 +41,9 @@ class DeliveryService
             if (! in_array($next, self::TRANSITIONS[$order->status] ?? [], true)) {
                 throw ValidationException::withMessages(['status' => 'This status transition is not permitted.']);
             }
+            if (! in_array($next, ['cancelled', 'failed'], true) && $sale->items->every(fn ($item) => (float) DB::table('refund_items')->where('sale_item_id', $item->id)->sum('quantity') >= $item->quantity - .0005)) {
+                throw ValidationException::withMessages(['status' => 'All goods on this sale have been returned. Cancel the fulfillment.']);
+            }
             if ($next === 'out_for_delivery' && ($order->fulfillment_type !== 'delivery' || empty($data['driver_name']) || empty($data['driver_phone']))) {
                 throw ValidationException::withMessages(['driver_name' => 'Dispatch needs a delivery person and contact.']);
             }

@@ -16,6 +16,18 @@ class DeliveryOrderTest extends TestCase
 {
     use CreatesShops, RefreshDatabase;
 
+    public function test_fully_returned_order_cannot_be_dispatched_again(): void
+    {
+        [$owner, $shop] = $this->shopWithMember();
+        $this->actingAs($owner, 'sanctum')->withHeaders($this->shopHeader($shop));
+        $product = $this->productWithStock($shop, $owner, 1000, 500);
+        $sale = $this->postJson('/api/sales', ['items' => [['product_id' => $product->id, 'quantity' => 1]], 'payments' => [['method' => 'CASH', 'amount' => 1000]], 'fulfillment' => ['type' => 'delivery', 'recipient_name' => 'QA recipient', 'recipient_phone' => 'QA contact', 'address' => 'QA address']])->assertCreated()->json();
+        $this->postJson('/api/sales/'.$sale['id'].'/refund', ['lines' => [['sale_item_id' => $sale['items'][0]['id'], 'quantity' => 1, 'restock' => true]], 'method' => 'CASH', 'reason' => 'QA cancelled goods'])->assertCreated();
+        $url = '/api/delivery/orders/'.$sale['delivery_order']['id'].'/status';
+        $this->postJson($url, ['status' => 'preparing'])->assertUnprocessable();
+        $this->postJson($url, ['status' => 'cancelled', 'failure_reason' => 'QA refunded'])->assertOk();
+    }
+
     public function test_next_day_delivery_collection_belongs_to_the_collection_shift(): void
     {
         [$owner, $shop] = $this->shopWithMember();
