@@ -330,7 +330,7 @@ class SaleService
             // than making a valid mixed sale fail or pretending it came from a lot.
             if ($product->kindOrDefault() === ProductKind::FinishedGood) {
                 $needed = round($line['quantity'] * $line['conversion'], 3);
-                $lotStock = $this->lots->availableQuantity($shop, $product->id, true);
+                $lotStock = max(0, $this->lots->availableQuantity($shop, $product->id, true) - $this->lots->expiredQuantity($shop, $product->id));
                 if ($lotStock > 0) {
                     $this->lots->consume($shop, $product, min($needed, $lotStock), $cashier, 'SALE', $saleItem);
                 }

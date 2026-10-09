@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\MovementType;
 use App\Enums\Role;
 use App\Models\Expense;
 use App\Models\ProductionBatch;
@@ -9,6 +10,7 @@ use App\Models\ProductionLot;
 use App\Models\StockMovement;
 use App\Models\WastageRecord;
 use App\Services\Ask\ShopTools;
+use App\Services\ProductionLotService;
 use App\Services\StockService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Concerns\CreatesShops;
@@ -86,5 +88,9 @@ class UatRemediationTest extends TestCase
         $this->postJson("/api/production/batches/$id/complete", [])->assertOk();
         $this->postJson('/api/sales', ['items' => [['product_id' => $product->id, 'quantity' => 1]], 'payments' => [['method' => 'CASH', 'amount' => 1000]]])->assertUnprocessable();
         $this->assertSame(2.0, app(StockService::class)->current($shop->id, $product->id));
+        app(StockService::class)->record($product, 1, MovementType::OpeningStock, $owner);
+        $this->postJson('/api/sales', ['items' => [['product_id' => $product->id, 'quantity' => 1]], 'payments' => [['method' => 'CASH', 'amount' => 1000]]])->assertCreated();
+        $this->assertSame(2.0, app(StockService::class)->current($shop->id, $product->id));
+        $this->assertSame(2.0, app(ProductionLotService::class)->remaining(ProductionLot::first()));
     }
 }
