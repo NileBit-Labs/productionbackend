@@ -63,6 +63,10 @@ class SaleService
     public function void(Shop $shop, User $user, Sale $sale, string $reason): Sale
     {
         return DB::transaction(function () use ($shop, $user, $sale, $reason) {
+            $candidate = Sale::where('shop_id', $shop->id)->findOrFail($sale->id);
+            if ($candidate->customer_id) {
+                Customer::where('shop_id', $shop->id)->lockForUpdate()->findOrFail($candidate->customer_id);
+            }
             $locked = Sale::where('shop_id', $shop->id)->lockForUpdate()->findOrFail($sale->id);
 
             if ($locked->status !== 'completed') {
@@ -75,8 +79,9 @@ class SaleService
 
             $locked->load('items', 'payments');
 
+            $products = Product::where('shop_id', $shop->id)->whereIn('id', $locked->items->pluck('product_id'))->orderBy('id')->lockForUpdate()->get()->keyBy('id');
             foreach ($locked->items as $item) {
-                $product = Product::findOrFail($item->product_id);
+                $product = $products[$item->product_id];
                 $baseQuantity = round($item->quantity * $item->unit_conversion, 3);
 
                 $this->stock->record(
@@ -103,7 +108,8 @@ class SaleService
 
             if ($locked->amount_due > 0 && $locked->customer_id) {
                 $customer = Customer::lockForUpdate()->find($locked->customer_id);
-                $this->ledger->record($customer, CustomerLedger::SALE_VOID, -$locked->amount_due, $user, $locked, "Void of {$locked->sale_number}");
+                $collected = (int) Payment::where('sale_id', $locked->id)->whereIn('id', DB::table('delivery_payment_attempts')->select('payment_id'))->sum('amount');
+                $this->ledger->record($customer, CustomerLedger::SALE_VOID, -max(0, $locked->amount_due - $collected), $user, $locked, "Void of {$locked->sale_number}");
             }
 
             $before = ['status' => $locked->status];

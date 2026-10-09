@@ -157,7 +157,12 @@ class RefundService
 
         try {
             return DB::transaction(function () use ($shop, $by, $sale, $data, $key) {
+                $candidate = Sale::where('shop_id', $shop->id)->findOrFail($sale->id);
+                if ($candidate->customer_id) {
+                    Customer::where('shop_id', $shop->id)->lockForUpdate()->findOrFail($candidate->customer_id);
+                }
                 $locked = Sale::where('shop_id', $shop->id)->lockForUpdate()->with('items')->findOrFail($sale->id);
+                Product::where('shop_id', $shop->id)->whereIn('id', $locked->items->pluck('product_id'))->orderBy('id')->lockForUpdate()->get();
                 $plan = $this->plan($locked, $data);
 
                 if ($plan['cash_refund'] > 0 && empty($data['method'])) {

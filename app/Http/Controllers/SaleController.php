@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\Role;
 use App\Http\Requests\StoreSaleRequest;
 use App\Models\Sale;
+use App\Services\CustomerDebt;
 use App\Services\SaleService;
 use App\Support\PerPage;
 use Illuminate\Http\JsonResponse;
@@ -93,6 +94,7 @@ class SaleController extends Controller
         $shop = $request->attributes->get('shop');
 
         return $sale->toArray() + [
+            'outstanding' => $sale->customer_id && $sale->status === 'completed' ? (int) (collect(app(CustomerDebt::class)->openSales([$sale->customer_id])[$sale->customer_id] ?? [])->firstWhere('sale_id', $sale->id)['owed'] ?? 0) : 0,
             'shop' => $shop->only('id', 'name', 'phone', 'address') + ['business_name' => $shop->organization?->name],
         ];
     }

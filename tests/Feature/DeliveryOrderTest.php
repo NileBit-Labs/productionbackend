@@ -16,6 +16,19 @@ class DeliveryOrderTest extends TestCase
 {
     use CreatesShops, RefreshDatabase;
 
+    public function test_void_after_delivery_collection_returns_cash_without_creating_customer_credit(): void
+    {
+        [$owner, $shop] = $this->shopWithMember();
+        $this->actingAs($owner, 'sanctum')->withHeaders($this->shopHeader($shop));
+        $customer = Customer::create(['shop_id' => $shop->id, 'name' => 'QA void collection']);
+        $product = $this->productWithStock($shop, $owner, 1000, 500);
+        $sale = $this->postJson('/api/sales', ['customer_id' => $customer->id, 'items' => [['product_id' => $product->id, 'quantity' => 1]], 'payments' => [], 'fulfillment' => ['type' => 'delivery', 'recipient_name' => 'QA recipient', 'recipient_phone' => 'QA contact', 'address' => 'QA address']])->assertCreated()->json();
+        $this->postJson('/api/delivery/orders/'.$sale['delivery_order']['id'].'/payments', ['idempotency_key' => 'cash-before-void', 'method' => 'CASH', 'amount' => 1000])->assertOk();
+        $this->postJson('/api/sales/'.$sale['id'].'/void', ['reason' => 'QA reverse order'])->assertOk()->assertJsonPath('outstanding', 0);
+        $this->assertSame(0, app(CustomerLedger::class)->balance($customer));
+        $this->assertSame(1000, (int) Payment::where('sale_id', $sale['id'])->where('direction', 'out')->sum('amount'));
+    }
+
     public function test_fully_returned_order_cannot_be_dispatched_again(): void
     {
         [$owner, $shop] = $this->shopWithMember();
@@ -69,6 +82,7 @@ class DeliveryOrderTest extends TestCase
         $this->postJson("/api/delivery/orders/$id/payments", $payment)->assertOk();
         $this->assertSame($payments, Payment::count());
         $this->assertSame(0, app(CustomerLedger::class)->balance($customer));
+        $this->getJson('/api/sales/'.$sale['id'])->assertOk()->assertJsonPath('outstanding', 0)->assertJsonPath('amount_due', 10000);
         $this->postJson($url, ['status' => 'delivered'])->assertUnprocessable();
         $this->postJson($url, ['status' => 'delivered', 'proof_of_delivery' => 'QA recipient signed note'])->assertOk()->assertJsonPath('status', 'delivered');
         $this->assertSame($count, StockMovement::count());
