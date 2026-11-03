@@ -221,9 +221,17 @@ class PurchaseService
     }
 
     /** Pays the supplier something towards what the shop owes them; applied to the oldest purchases first. */
-    public function pay(Shop $shop, User $by, int $supplierId, int $amount, PaymentMethod $method, ?string $reference): Supplier
+    public function pay(Shop $shop, User $by, int $supplierId, int $amount, PaymentMethod $method, ?string $reference, ?string $idempotencyKey = null): Supplier
     {
-        return DB::transaction(function () use ($shop, $by, $supplierId, $amount, $method, $reference) {
+        return DB::transaction(function () use ($shop, $by, $supplierId, $amount, $method, $reference, $idempotencyKey) {
+            $replay = app(PaymentReplay::class);
+            $attributes = $replay->attributes($shop, $by, 'supplier:'.$supplierId, [
+                'idempotency_key' => $idempotencyKey, 'amount' => $amount, 'method' => $method->value, 'reference' => $reference,
+            ]);
+            if ($replay->wasRecorded($shop, $attributes)) {
+                return Supplier::where('shop_id', $shop->id)->findOrFail($supplierId);
+            }
+
             $supplier = Supplier::where('shop_id', $shop->id)->lockForUpdate()->findOrFail($supplierId);
             $balance = $this->ledger->balance($supplier);
 
@@ -235,7 +243,7 @@ class PurchaseService
                 ]);
             }
 
-            $payment = Payment::create([
+            $payment = Payment::create($attributes + [
                 'shop_id' => $shop->id,
                 'supplier_id' => $supplier->id,
                 'amount' => $amount,

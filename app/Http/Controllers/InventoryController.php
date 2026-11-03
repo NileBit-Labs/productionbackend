@@ -13,6 +13,7 @@ use App\Services\InventoryService;
 use App\Support\KindFilter;
 use App\Support\ManagedProductPresenter;
 use App\Support\PerPage;
+use App\Support\ReportRange;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -87,12 +88,18 @@ class InventoryController extends Controller
             $query->where('stock_movements.movement_type', $request->query('type'));
         }
 
-        if ($request->filled('from')) {
-            $query->where('stock_movements.created_at', '>=', $request->date('from')->startOfDay());
-        }
-
-        if ($request->filled('to')) {
-            $query->where('stock_movements.created_at', '<=', $request->date('to')->endOfDay());
+        if ($request->filled('from') || $request->filled('to')) {
+            $dates = $request->duplicate([
+                'from' => $request->query('from') ?: $request->query('to'),
+                'to' => $request->query('to') ?: $request->query('from'),
+            ]);
+            $range = ReportRange::fromRequest($dates, $shop);
+            if ($request->filled('from')) {
+                $query->where('stock_movements.created_at', '>=', $range->utcFrom());
+            }
+            if ($request->filled('to')) {
+                $query->where('stock_movements.created_at', '<=', $range->utcTo());
+            }
         }
 
         $page = $query->paginate(PerPage::from($request));

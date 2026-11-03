@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Enums\Role;
 use App\Models\Shop;
+use App\Services\OperationReplay;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -39,9 +40,11 @@ class EnsureShopAccess
             abort(403, 'Your role does not permit this action.');
         }
 
+        abort_if($shop->status !== 'active' && ! $request->isMethodSafe(), 403, 'This shop is inactive. Reactivate it before recording changes.');
+
         $request->attributes->set('shop', $shop);
         $request->attributes->set('shopRole', $userRole->role);
 
-        return $next($request);
+        return app(OperationReplay::class)->handle($request, $next);
     }
 }

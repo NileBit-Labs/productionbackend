@@ -11,7 +11,7 @@ use Illuminate\Http\Request;
  */
 final class PerPage
 {
-    public const ALLOWED = [10, 25, 50, 100];
+    public const ALLOWED = [6, 10, 25, 50, 100];
 
     public static function from(Request $request, int $default = 50): int
     {

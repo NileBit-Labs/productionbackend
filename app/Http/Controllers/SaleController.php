@@ -6,20 +6,27 @@ use App\Enums\Role;
 use App\Http\Requests\StoreSaleRequest;
 use App\Models\Sale;
 use App\Services\CustomerDebt;
+use App\Services\PriceChanged;
 use App\Services\SaleService;
 use App\Support\PerPage;
+use App\Support\ReportRange;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class SaleController extends Controller
 {
     public function store(StoreSaleRequest $request, SaleService $sales): JsonResponse
     {
-        $sale = $sales->create(
-            $request->attributes->get('shop'),
-            $request->user(),
-            $request->validated(),
-        );
+        try {
+            $sale = $sales->create(
+                $request->attributes->get('shop'),
+                $request->user(),
+                $request->validated(),
+            );
+        } catch (PriceChanged $e) {
+            throw ValidationException::withMessages(['expected_total' => 'Prices changed. Review the current total before confirming again.']);
+        }
 
         return response()->json($this->receipt($request, $sale), $sale->wasRecentlyCreated ? 201 : 200);
     }
@@ -41,12 +48,18 @@ class SaleController extends Controller
             $query->where('status', $request->query('status'));
         }
 
-        if ($request->filled('from')) {
-            $query->where('created_at', '>=', $request->date('from')->startOfDay());
-        }
-
-        if ($request->filled('to')) {
-            $query->where('created_at', '<=', $request->date('to')->endOfDay());
+        if ($request->filled('from') || $request->filled('to')) {
+            $dates = $request->duplicate([
+                'from' => $request->query('from') ?: $request->query('to'),
+                'to' => $request->query('to') ?: $request->query('from'),
+            ]);
+            $range = ReportRange::fromRequest($dates, $shop);
+            if ($request->filled('from')) {
+                $query->where('created_at', '>=', $range->utcFrom());
+            }
+            if ($request->filled('to')) {
+                $query->where('created_at', '<=', $range->utcTo());
+            }
         }
 
         return $query->paginate(PerPage::from($request, 25));

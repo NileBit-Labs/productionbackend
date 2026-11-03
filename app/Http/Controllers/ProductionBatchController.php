@@ -84,6 +84,7 @@ class ProductionBatchController extends Controller
         $shop = $request->attributes->get('shop');
 
         $data = $request->validate([
+            'expected_revision' => ['nullable', 'integer', 'min:1'],
             'name' => ['sometimes', 'string', 'max:255'],
             'production_date' => ['sometimes', 'date', 'before_or_equal:'.$shop->today()],
             'expiry_date' => ['nullable', 'date'],
@@ -103,6 +104,7 @@ class ProductionBatchController extends Controller
         $shop = $request->attributes->get('shop');
 
         $data = $request->validate([
+            'expected_revision' => ['nullable', 'integer', 'min:1'],
             'production_date' => ['sometimes', 'date', 'before_or_equal:'.$shop->today()],
             'expiry_date' => ['nullable', 'date'],
             'notes' => ['nullable', 'string', 'max:2000'],
@@ -116,9 +118,9 @@ class ProductionBatchController extends Controller
 
     public function cancel(Request $request, ProductionService $production, int $batch): JsonResponse
     {
-        $data = $request->validate(['reason' => ['required', 'string', 'min:3', 'max:255']]);
+        $data = $request->validate(['reason' => ['required', 'string', 'min:3', 'max:255'], 'expected_revision' => ['nullable', 'integer', 'min:1']]);
 
-        $production->cancel($request->attributes->get('shop'), $request->user(), $batch, $data['reason']);
+        $production->cancel($request->attributes->get('shop'), $request->user(), $batch, $data['reason'], $data['expected_revision'] ?? null);
 
         return response()->json($this->detail($request, $batch));
     }
@@ -166,6 +168,7 @@ class ProductionBatchController extends Controller
         return [
             'id' => $batch->id,
             'batch_number' => $batch->batch_number,
+            'revision' => (int) $batch->revision,
             'name' => $batch->name,
             'status' => $batch->status->value,
             'recipe' => $batch->recipe ? ['id' => $batch->recipe->id, 'name' => $batch->recipe->name] : null,

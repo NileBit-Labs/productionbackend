@@ -75,6 +75,7 @@ class ProductionService
     {
         return DB::transaction(function () use ($shop, $by, $batchId, $data) {
             $batch = $this->lockBatch($shop, $batchId);
+            $this->assertRevision($batch, $data['expected_revision'] ?? null);
             $this->assertDraft($batch);
 
             $before = $batch->only(['name', 'production_date', 'expiry_date', 'planned_yield', 'yield_unit', 'responsible_user_id', 'notes']);
@@ -94,6 +95,7 @@ class ProductionService
             if ($batch->expiry_date && $batch->expiry_date->lt($batch->production_date)) {
                 throw ValidationException::withMessages(['expiry_date' => 'Expiry cannot be before production.']);
             }
+            $batch->revision++;
             $batch->save();
 
             if (array_key_exists('inputs', $data)) {
@@ -122,6 +124,7 @@ class ProductionService
             if (! empty($data['idempotency_key']) && $batch->status === BatchStatus::Completed && $batch->completion_idempotency_key === $data['idempotency_key']) {
                 return $batch;
             }
+            $this->assertRevision($batch, $data['expected_revision'] ?? null);
             $this->assertDraft($batch);
             $data += $batch->draft_payload ?? [];
 
@@ -252,6 +255,7 @@ class ProductionService
                 $this->lots->create($shop, $batch, $output);
             }
 
+            $batch->revision++;
             $batch->fill([
                 'status' => BatchStatus::Completed,
                 'material_cost' => $material,
@@ -283,10 +287,11 @@ class ProductionService
      * A draft is simply abandoned. A completed batch is reversed - inputs back on the shelf,
      * outputs taken off - but only while all of its output is still in stock.
      */
-    public function cancel(Shop $shop, User $by, int $batchId, string $reason): ProductionBatch
+    public function cancel(Shop $shop, User $by, int $batchId, string $reason, ?int $expectedRevision = null): ProductionBatch
     {
-        return DB::transaction(function () use ($shop, $by, $batchId, $reason) {
+        return DB::transaction(function () use ($shop, $by, $batchId, $reason, $expectedRevision) {
             $batch = $this->lockBatch($shop, $batchId);
+            $this->assertRevision($batch, $expectedRevision);
 
             if ($batch->status === BatchStatus::Cancelled) {
                 throw ValidationException::withMessages(['batch' => 'This batch is already cancelled.']);
@@ -302,6 +307,7 @@ class ProductionService
             $moved = Expense::where('production_batch_id', $batch->id)->where('type', '!=', ExpenseType::Operating)
                 ->update(['type' => ExpenseType::Operating]);
 
+            $batch->revision++;
             $batch->update([
                 'status' => BatchStatus::Cancelled,
                 'cancelled_at' => now(),
@@ -639,6 +645,13 @@ class ProductionService
     private function lockBatch(Shop $shop, int $batchId): ProductionBatch
     {
         return ProductionBatch::where('shop_id', $shop->id)->lockForUpdate()->findOrFail($batchId);
+    }
+
+    private function assertRevision(ProductionBatch $batch, ?int $expected): void
+    {
+        if ($expected !== null && (int) $batch->revision !== $expected) {
+            throw ValidationException::withMessages(['expected_revision' => 'This batch changed after it was loaded. Review its current details before confirming.']);
+        }
     }
 
     private function assertDraft(ProductionBatch $batch): void

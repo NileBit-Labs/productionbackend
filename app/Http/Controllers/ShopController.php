@@ -12,6 +12,7 @@ class ShopController extends Controller
 {
     public function store(Request $request)
     {
+        abort_unless($request->user()->status === 'active' && $request->user()->organization()->where('owner_user_id', $request->user()->id)->exists(), 403, 'Only the active organization owner may create a business.');
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'business_type' => ['required', 'string', 'max:255'],
@@ -65,6 +66,7 @@ class ShopController extends Controller
 
     protected function authorizeShopAccess(Request $request, Shop $shop, array $allowedRoles = []): void
     {
+        abort_unless($request->user()->status === 'active', 403, 'This account has been deactivated.');
         $userRole = $request->user()->shopRoles()->where('shop_id', $shop->id)->first();
 
         abort_if(! $userRole, 403, 'You do not have access to this shop.');

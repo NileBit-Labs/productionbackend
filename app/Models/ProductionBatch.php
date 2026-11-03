@@ -22,6 +22,7 @@ class ProductionBatch extends Model
     {
         return [
             'draft_payload' => 'array',
+            'revision' => 'integer',
             'status' => BatchStatus::class,
             'production_date' => 'date:Y-m-d',
             'expiry_date' => 'date:Y-m-d',
