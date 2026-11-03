@@ -9,8 +9,10 @@ class Payment extends Model
 {
     protected $fillable = [
         'shop_id', 'sale_id', 'customer_id', 'supplier_id', 'purchase_id', 'amount', 'method',
-        'reference', 'direction', 'recorded_by',
+        'reference', 'direction', 'recorded_by', 'idempotency_key', 'request_hash',
     ];
+
+    protected $hidden = ['idempotency_key', 'request_hash'];
 
     protected function casts(): array
     {

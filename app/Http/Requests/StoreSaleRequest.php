@@ -29,6 +29,7 @@ class StoreSaleRequest extends FormRequest
             'due_date' => ['nullable', 'date'],
             'client_created_at' => ['nullable', 'date'],
             'discount' => ['nullable', 'integer', 'min:0'],
+            'expected_total' => ['nullable', 'integer', 'min:1'],
 
             'items' => ['required', 'array', 'min:1', 'max:200'],
             'items.*.product_id' => ['required', 'integer'],

@@ -3,6 +3,7 @@
 use App\Http\Controllers\AskController;
 use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\BotCapabilitiesController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\DeliveryOrderController;
@@ -35,22 +36,26 @@ Route::prefix('auth')->group(function () {
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:password-reset');
     Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 
-    Route::middleware('auth:sanctum')->group(function () {
+    Route::middleware(['auth:sanctum', 'bot.scope'])->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::post('/refresh', [AuthController::class, 'refresh']);
         Route::post('/change-password', [AuthController::class, 'changePassword']);
         Route::get('/me', [AuthController::class, 'me']);
+        Route::get('/connections', [AuthController::class, 'connections']);
+        Route::delete('/connections/{connection}', [AuthController::class, 'revokeConnection']);
     });
 });
 
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'bot.scope'])->group(function () {
     Route::post('/shops', [ShopController::class, 'store']);
     Route::get('/shops/{shop}', [ShopController::class, 'show']);
     Route::patch('/shops/{shop}', [ShopController::class, 'update']);
 });
 
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'bot.scope'])->group(function () {
     Route::middleware('shop.access')->group(function () {
+        Route::get('/bot/capabilities', BotCapabilitiesController::class);
+        Route::get('/bot/operations/{key}', [BotCapabilitiesController::class, 'operation']);
         Route::get('/pos/products', [PosCatalogController::class, 'index']);
 
         Route::get('/reports/dashboard', [ReportController::class, 'dashboard']);

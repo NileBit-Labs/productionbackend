@@ -124,7 +124,12 @@ class SupplierController extends Controller
 
     public function pay(Request $request, PurchaseService $purchases, SupplierDebt $debt, int $supplier): JsonResponse
     {
+        if (! $request->filled('idempotency_key') && $request->hasHeader('Idempotency-Key')) {
+            $request->merge(['idempotency_key' => $request->header('Idempotency-Key')]);
+        }
+
         $data = $request->validate([
+            'idempotency_key' => ['nullable', 'string', 'max:100'],
             'amount' => ['required', 'integer', 'min:1'],
             'method' => ['required', Rule::enum(PaymentMethod::class)],
             'reference' => ['nullable', 'string', 'max:100'],
@@ -132,7 +137,7 @@ class SupplierController extends Controller
 
         $purchases->pay(
             $request->attributes->get('shop'), $request->user(), $supplier,
-            $data['amount'], PaymentMethod::from($data['method']), $data['reference'] ?? null,
+            $data['amount'], PaymentMethod::from($data['method']), $data['reference'] ?? null, $data['idempotency_key'] ?? null,
         );
 
         return $this->show($request, $debt, $supplier);

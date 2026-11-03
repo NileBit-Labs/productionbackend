@@ -83,4 +83,14 @@ class PerPageTest extends TestCase
         $this->assertCount(10, $this->api($owner, $shop)->getJson('/api/inventory/movements?per_page=10')->json('data'));
         $this->assertCount(10, $this->api($owner, $shop)->getJson('/api/audit-logs?per_page=10')->json('page.data'));
     }
+
+    public function test_six_row_bot_pages_are_honoured_without_losing_later_products(): void
+    {
+        [$owner, $shop] = $this->shopWithMember();
+        for ($i = 0; $i < 8; $i++) {
+            $this->productWithStock($shop, $owner, stock: 0);
+        }
+        $this->api($owner, $shop)->getJson('/api/products?per_page=6')->assertOk()->assertJsonCount(6, 'data')->assertJsonPath('per_page', 6);
+        $this->api($owner, $shop)->getJson('/api/products?per_page=6&page=2')->assertOk()->assertJsonCount(2, 'data');
+    }
 }

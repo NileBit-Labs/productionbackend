@@ -62,6 +62,7 @@ class AuthController extends Controller
         $data = $request->validate([
             'email' => ['required', 'email'],
             'password' => ['required', 'string'],
+            'client' => ['nullable', 'in:web,whatsapp'],
         ]);
 
         $user = User::where('email', $data['email'])->first();
@@ -78,11 +79,14 @@ class AuthController extends Controller
             ]);
         }
 
-        $token = $user->createToken('api')->plainTextToken;
+        $bot = ($data['client'] ?? 'web') === 'whatsapp';
+        $token = $bot ? $user->createToken('nilebit-whatsapp', ['pos:bot'], now()->addDays(90))->plainTextToken : $user->createToken('api')->plainTextToken;
 
         return response()->json([
             'user' => $user->fresh(['organization', 'shopRoles.shop']),
             'token' => $token,
+            'token_scope' => $bot ? 'pos:bot' : '*',
+            'can_create_business' => $user->organization()->where('owner_user_id', $user->id)->exists(),
         ]);
     }
 
@@ -168,6 +172,22 @@ class AuthController extends Controller
         $token = $user->createToken('api')->plainTextToken;
 
         return response()->json(['token' => $token]);
+    }
+
+    public function connections(Request $request)
+    {
+        abort_unless($request->user()->status === 'active', 403);
+
+        return response()->json($request->user()->tokens()->where('name', 'nilebit-whatsapp')
+            ->orderByDesc('id')->get(['id', 'name', 'last_used_at', 'created_at', 'expires_at']));
+    }
+
+    public function revokeConnection(Request $request, int $connection)
+    {
+        abort_unless($request->user()->status === 'active', 403);
+        $request->user()->tokens()->where('name', 'nilebit-whatsapp')->findOrFail($connection)->delete();
+
+        return response()->noContent();
     }
 
     public function me(Request $request)

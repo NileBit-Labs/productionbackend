@@ -9,6 +9,7 @@ use App\Models\CustomerLedgerEntry;
 use App\Models\Payment;
 use App\Services\CustomerDebt;
 use App\Services\CustomerLedger;
+use App\Services\PaymentReplay;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -123,13 +124,24 @@ class CustomerController extends Controller
     {
         $shop = $request->attributes->get('shop');
 
+        if (! $request->filled('idempotency_key') && $request->hasHeader('Idempotency-Key')) {
+            $request->merge(['idempotency_key' => $request->header('Idempotency-Key')]);
+        }
+
         $data = $request->validate([
+            'idempotency_key' => ['nullable', 'string', 'max:100'],
             'amount' => ['required', 'integer', 'min:1'],
             'method' => ['required', Rule::enum(PaymentMethod::class)],
             'reference' => ['nullable', 'string', 'max:100'],
         ]);
 
         DB::transaction(function () use ($request, $shop, $ledger, $data, $customer) {
+            $replay = app(PaymentReplay::class);
+            $attributes = $replay->attributes($shop, $request->user(), 'customer:'.$customer, $data);
+            if ($replay->wasRecorded($shop, $attributes)) {
+                return;
+            }
+
             $model = Customer::where('shop_id', $shop->id)->lockForUpdate()->findOrFail($customer);
             $balance = $ledger->balance($model);
 
@@ -141,7 +153,7 @@ class CustomerController extends Controller
                 ]);
             }
 
-            $payment = Payment::create([
+            $payment = Payment::create($attributes + [
                 'shop_id' => $shop->id,
                 'customer_id' => $model->id,
                 'amount' => $data['amount'],
